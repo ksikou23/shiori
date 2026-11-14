@@ -124,15 +124,18 @@ pub fn is_fullscreen(h: isize) -> bool {
         && rect.bottom >= screen.bottom
 }
 
+unsafe fn stands_alone(owner: HWND) -> bool {
+    let mut rect = RECT::default();
+    let sized = GetWindowRect(owner, &mut rect).is_ok() && rect.right - rect.left > 1 && rect.bottom - rect.top > 1;
+    IsWindowVisible(owner).as_bool() && sized && GetWindowLongW(owner, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 == 0
+}
+
 unsafe extern "system" fn collect(h: HWND, lparam: LPARAM) -> BOOL {
     let out = &mut *(lparam.0 as *mut Vec<isize>);
     if !IsWindowVisible(h).as_bool() {
         return true.into();
     }
-    if GetWindow(h, GW_OWNER)
-        .map(|o| !o.0.is_null())
-        .unwrap_or(false)
-    {
+    if GetWindow(h, GW_OWNER).is_ok_and(|o| !o.0.is_null() && stands_alone(o)) {
         return true.into();
     }
     if GetWindowLongW(h, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 != 0 {

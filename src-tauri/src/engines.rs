@@ -237,6 +237,7 @@ static ENGINES: LazyLock<Vec<Engine>> = LazyLock::new(|| {
             &[],
             &["nscript.dat", "0.txt", "arc.nsa"],
         ),
+        Engine::new("LiveMaker", &[], &[], &["live.dll"]),
         Engine::new(
             "Unity",
             &[],
