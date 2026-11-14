@@ -13,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClassNameW, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindow,
     GetWindowRect,
     GetWindowLongW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindow,
-    IsWindowVisible, SetWindowLongW, SystemParametersInfoW, GWL_EXSTYLE, GW_OWNER,
+    IsWindowVisible, SetWindowLongW, SystemParametersInfoW, GWL_EXSTYLE, GWL_STYLE, GW_OWNER, WS_CAPTION,
     SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETWORKAREA,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
@@ -105,6 +105,10 @@ pub fn window_exe(h: isize) -> String {
 
 pub fn is_fullscreen(h: isize) -> bool {
     if h == 0 || matches!(class_name(h).as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") {
+        return false;
+    }
+    let style = unsafe { GetWindowLongW(hwnd(h), GWL_STYLE) } as u32;
+    if style & WS_CAPTION.0 == WS_CAPTION.0 {
         return false;
     }
     let mut rect = RECT::default();

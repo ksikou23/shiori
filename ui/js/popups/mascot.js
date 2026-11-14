@@ -69,8 +69,10 @@ listenHere("voice", (event) => {
   voice.play().catch(() => {});
 });
 
-listenHere("tuck", (event) => document.body.classList.toggle("tucked", !!event.payload));
-invoke("mascot_tucked").then((tucked) => document.body.classList.toggle("tucked", !!tucked));
+const tuck = (tucked) => document.body.classList.toggle("tucked", !!tucked);
+const syncTuck = () => invoke("mascot_tucked").then(tuck).catch(() => {});
+listenHere("tuck", (event) => tuck(event.payload)).then(syncTuck);
+setInterval(syncTuck, 2000);
 
 listenHere("mascot-refresh", start);
 setInterval(() => invoke("mascot_alive"), 10000);
