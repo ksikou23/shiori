@@ -142,6 +142,34 @@ unsafe extern "system" fn collect(h: HWND, lparam: LPARAM) -> BOOL {
     true.into()
 }
 
+unsafe extern "system" fn collect_visible(h: HWND, lparam: LPARAM) -> BOOL {
+    let out = &mut *(lparam.0 as *mut Vec<isize>);
+    if IsWindowVisible(h).as_bool() {
+        out.push(h.0 as isize);
+    }
+    true.into()
+}
+
+pub fn content_window(h: isize) -> isize {
+    if client_area(h) >= 64 * 64 {
+        return h;
+    }
+    let pid = window_pid(h);
+    let mut handles: Vec<isize> = Vec::new();
+    unsafe {
+        let _ = EnumWindows(
+            Some(collect_visible),
+            LPARAM(&mut handles as *mut Vec<isize> as isize),
+        );
+    }
+    handles
+        .into_iter()
+        .filter(|&w| window_pid(w) == pid)
+        .max_by_key(|&w| client_area(w))
+        .filter(|&w| client_area(w) > client_area(h))
+        .unwrap_or(h)
+}
+
 fn client_area(h: isize) -> i64 {
     let mut rect = RECT::default();
     unsafe {

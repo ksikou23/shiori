@@ -349,8 +349,9 @@ fn capture_and_save(
         return Err("No visual novel is running.".into());
     }
 
-    let img = capture::capture_window(snap.hwnd)?;
-    let area = capture::client_rect_on_screen(snap.hwnd);
+    let window = crate::winapi::content_window(snap.hwnd);
+    let img = capture::capture_window(window)?;
+    let area = capture::client_rect_on_screen(window);
 
     let (folder, volume) = {
         let mut cfg = shared.config.lock().unwrap();

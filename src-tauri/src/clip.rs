@@ -68,6 +68,7 @@ struct Pipe {
     picture: Mutex<Picture>,
     target: Mutex<Option<Output>>,
     hwnd: isize,
+    view: isize,
     fps: u32,
     audio: bool,
     quality: f64,
@@ -246,7 +247,7 @@ impl GraphicsCaptureApiHandler for Recorder {
         self.last = Some(tick);
 
         let (width, height) = (frame.width(), frame.height());
-        let (left, top, right, bottom) = client_area(self.pipe.hwnd, width, height).unwrap_or((0, 0, width, height));
+        let (left, top, right, bottom) = client_area(self.pipe.view, width, height).unwrap_or((0, 0, width, height));
         let buffer = frame.buffer_crop(left, top, right, bottom).map_err(|e| e.to_string())?;
         let pixels = buffer.as_nopadding_buffer(&mut self.scratch);
         {
@@ -423,6 +424,7 @@ fn open_session(shared: &Shared, target: Option<Output>, clip: &ClipSettings) ->
         picture: Mutex::new(Picture::default()),
         target: Mutex::new(target),
         hwnd: snap.hwnd,
+        view: crate::winapi::content_window(snap.hwnd),
         fps: clip.fps,
         audio: clip.audio,
         quality: clip.quality,
@@ -434,7 +436,7 @@ fn open_session(shared: &Shared, target: Option<Output>, clip: &ClipSettings) ->
         DrawBorderSettings::Default
     };
     let settings = Settings::new(
-        Window::from_raw_hwnd(snap.hwnd as *mut std::ffi::c_void),
+        Window::from_raw_hwnd(pipe.view as *mut std::ffi::c_void),
         CursorCaptureSettings::WithoutCursor,
         border,
         SecondaryWindowSettings::Default,
