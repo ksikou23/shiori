@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 mod config;
 mod discord;
@@ -34,6 +34,7 @@ mod personalities;
 mod reco;
 mod screenshots;
 mod updater;
+mod walkthrough;
 
 mod commands;
 mod tray;
@@ -280,6 +281,16 @@ fn main() {
             commands::popups::remove_cutout,
             commands::popups::remove_mascot,
             commands::popups::change_mascot_image,
+            commands::walkthrough::walkthrough_get,
+            commands::walkthrough::walkthrough_search,
+            commands::walkthrough::walkthrough_pick,
+            commands::walkthrough::walkthrough_source,
+            commands::walkthrough::walkthrough_mark,
+            commands::walkthrough::walkthrough_route,
+            commands::walkthrough::walkthrough_clear,
+            commands::walkthrough::walkthrough_current,
+            commands::walkthrough::walkthrough_translate,
+            commands::walkthrough::toggle_walkthrough_overlay,
             commands::popups::rename_mascot,
             commands::popups::show_mascot,
             commands::popups::set_mascot_size,

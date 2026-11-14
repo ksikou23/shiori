@@ -819,3 +819,80 @@ button.chip:hover,
   padding-left: 20px;
   line-height: 1.7;
 }
+
+.spoiler {
+  filter: blur(5px);
+  cursor: pointer;
+  user-select: none;
+  transition: filter 0.15s ease;
+}
+
+.spoiler:hover {
+  filter: blur(4px);
+}
+
+.guide-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guide-step {
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.guide-step.choice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.guide-step.choice:hover {
+  background: var(--surface-hover);
+}
+
+.guide-step.choice input {
+  flex: none;
+  position: relative;
+  top: 2px;
+}
+
+.guide-step.choice.done .guide-text {
+  color: var(--subtle);
+  text-decoration: line-through;
+}
+
+.guide-step.choice.current {
+  background: var(--accent-soft);
+}
+
+.guide-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.guide-step.save {
+  color: var(--red);
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.guide-step.heading {
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.guide-step.note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.guide-step.ending {
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 4px;
+}

@@ -40,7 +40,7 @@ pub fn update_settings(
     app: AppHandle,
     mut changes: Map<String, Value>,
 ) -> Result<(), String> {
-    for name in ["screenshot_hotkey", "clip_hotkey", "clip_replay_hotkey"] {
+    for name in ["screenshot_hotkey", "clip_hotkey", "clip_replay_hotkey", "walkthrough_hotkey"] {
         if let Some(Value::String(key)) = changes.get(name) {
             let normalized = hotkey::normalize(key);
             changes.insert(name.into(), json!(normalized));
@@ -61,6 +61,9 @@ pub fn update_settings(
         "settings: {}",
         changes.keys().cloned().collect::<Vec<_>>().join(", ")
     ));
+    if changes.get("walkthrough_enabled").and_then(Value::as_bool) == Some(false) {
+        ui_windows::hide_walkthrough(&shared);
+    }
     let mascot_changed = changes
         .keys()
         .any(|k| k.starts_with("mascot_") && !NOT_ON_SCREEN.contains(&k.as_str()));

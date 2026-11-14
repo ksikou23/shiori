@@ -122,3 +122,90 @@ body.balloon-window.right {
 .shot-toast.clickable:hover {
   border-color: var(--accent);
 }
+
+.guide-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: calc(100vh - 4px);
+  margin: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.guide-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: grab;
+  min-height: 24px;
+}
+
+.guide-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.guide-close:hover {
+  color: var(--text);
+}
+
+.guide-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.guide-route button {
+  border: none;
+  background: var(--surface-alt);
+  color: var(--text);
+  border-radius: 6px;
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.guide-route-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+.guide-overlay .guide-steps {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.guide-overlay .guide-step {
+  font-size: 14px;
+}
+
+.guide-overlay .guide-step.note {
+  font-size: 12.5px;
+}
+
+.guide-overlay .guide-done {
+  flex: 1;
+}
+
+.guide-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}

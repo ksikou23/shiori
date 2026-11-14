@@ -11,11 +11,21 @@ import {
   shortDate,
   weekday,
 } from "../format.js";
-import { invoke, fileUrl } from "../tauri.js";
+import { invoke, fileUrl, listen } from "../tauri.js";
 import { register, show } from "../router.js";
-import { store, subscribe } from "../store.js";
+import { store, subscribe, update } from "../store.js";
 import { ask, call, openDialog, segmented, setCover, toast } from "../ui.js";
 import { drawChart } from "../components/chart.js";
+import {
+  SOURCES,
+  choiceCount,
+  findWalkthrough,
+  nextChoice,
+  raw,
+  say,
+  secret,
+  stepRow,
+} from "../components/walkthrough.js";
 import { LAUNCHERS, createShortcut, locateGame, locateTool, playGame } from "../components/play.js";
 import { t } from "../i18n.js";
 
@@ -137,6 +147,18 @@ const TEMPLATE = `
     <div class="hint-text" data-id="shots-hint"></div>
   </div>
 
+  <div class="card" data-id="guide-card">
+    <div class="card-title">
+      <div class="row"><b>Walkthrough</b> <span class="labs-tag">beta</span><span class="muted" data-id="guide-count"></span></div>
+      <div class="row">
+        <label class="guide-spoilers"><input type="checkbox" data-id="guide-english" /> English</label>
+        <label class="guide-spoilers"><input type="checkbox" data-id="guide-spoilers" /> Show spoilers</label>
+        <button class="btn secondary small" data-id="guide-overlay">Show over the game</button>
+      </div>
+    </div>
+    <div data-id="guide"></div>
+  </div>
+
   <div class="game-footer">
     <button class="btn" data-id="play">▶  Play</button>
     <button
@@ -166,6 +188,10 @@ let root;
 let key = "";
 let game = null;
 let range = "days";
+let guide = null;
+let guideFor = "";
+let lastScroll = null;
+let translating = false;
 
 const part = (id) => $(`[data-id="${id}"]`, root);
 
@@ -185,6 +211,26 @@ function build(container) {
 
   subscribe("library", (change) => isShown() && (!change?.key || change.key === key) && load());
   subscribe("screenshots", (change) => isShown() && change?.key === key && load());
+
+  part("guide-overlay").onclick = () => call("toggle_walkthrough_overlay");
+  part("guide-english").onchange = async (event) => {
+    const changes = { walkthrough_english: event.target.checked };
+    update("settings", { ...store.settings, ...changes });
+    await call("update_settings", { changes });
+    renderGuide();
+    ensureEnglish();
+  };
+  part("guide-spoilers").onchange = async (event) => {
+    const changes = { walkthrough_spoilers: event.target.checked };
+    update("settings", { ...store.settings, ...changes });
+    await call("update_settings", { changes });
+    renderGuide();
+  };
+  listen("walkthrough-changed", (event) => {
+    if (isShown() && event.payload?.key === key) {
+      loadGuide(false, true);
+    }
+  });
 }
 
 function isShown() {
@@ -220,6 +266,11 @@ async function load() {
   renderProgress(entry);
   renderChart();
   renderShots();
+  const guideOn = store.settings.walkthrough_enabled !== false;
+  part("guide-card").hidden = !guideOn;
+  if (guideOn && guideFor !== key) {
+    loadGuide(false);
+  }
   document.dispatchEvent(new CustomEvent("game-loaded", { detail: game }));
 
   part("play").hidden = !exe;
@@ -608,6 +659,247 @@ async function renderShots() {
       );
     }
   }
+}
+
+async function loadGuide(refresh, quiet = false) {
+  const forKey = key;
+  guideFor = key;
+  if (!quiet) {
+    guide = { loading: true };
+    renderGuide();
+  }
+  try {
+    const result = await invoke("walkthrough_get", { key: forKey, refresh });
+    if (forKey !== key) {
+      return;
+    }
+    guide = result.found ? result.walkthrough : { missing: true };
+    ensureEnglish();
+  } catch (error) {
+    if (forKey !== key) {
+      return;
+    }
+    guide = { error: String(error) };
+  }
+  renderGuide();
+}
+
+const wantsEnglish = () => store.settings.walkthrough_english !== false;
+
+async function ensureEnglish() {
+  if (!wantsEnglish() || !guide?.routes || guide.translated || translating) {
+    return;
+  }
+  const forKey = key;
+  translating = true;
+  renderGuide();
+  try {
+    const result = await invoke("walkthrough_translate", { key: forKey });
+    if (forKey === key && result.found) {
+      guide = result.walkthrough;
+    }
+  } catch {
+    if (forKey === key && guide) {
+      guide.translateFailed = true;
+    }
+  }
+  translating = false;
+  if (forKey === key) {
+    renderGuide();
+  }
+}
+
+async function useSource(source) {
+  if (guide?.source === source || translating) {
+    return;
+  }
+  const previous = guide;
+  guide = { loading: true };
+  renderGuide();
+  const result = await call("walkthrough_source", { key, source });
+  if (result?.found) {
+    guide = result.walkthrough;
+    renderGuide();
+    ensureEnglish();
+    return;
+  }
+  guide = previous;
+  renderGuide();
+  if (result?.no_match) {
+    const label = SOURCES.find((s) => s.id === source)?.label || source;
+    toast(t("No walkthrough found on {site}. Search it yourself:", { site: label }));
+    pickGuide(source);
+  }
+}
+
+function sourcePicker() {
+  return el(
+    "div",
+    { class: "guide-sources" },
+    el("span", { class: "muted" }, "Source"),
+    SOURCES.map((source) =>
+      el(
+        "button",
+        {
+          class: guide?.source === source.id ? "on" : "",
+          title: source.hint,
+          onclick: () => useSource(source.id),
+        },
+        source.label,
+      ),
+    ),
+  );
+}
+
+async function pickGuide(source = "") {
+  const result = await findWalkthrough(key, game.entry.title || game.name, source);
+  if (result?.found) {
+    guide = result.walkthrough;
+    renderGuide();
+    ensureEnglish();
+  }
+}
+
+async function markGuide(id, done) {
+  const result = await call("walkthrough_mark", { key, id, done });
+  if (result?.found) {
+    guide = result.walkthrough;
+    renderGuide();
+  }
+}
+
+async function pickRoute(route) {
+  const result = await call("walkthrough_route", { key, route });
+  if (result?.found) {
+    guide = result.walkthrough;
+    renderGuide();
+  }
+}
+
+async function clearRoute() {
+  const result = await call("walkthrough_clear", { key });
+  if (result?.found) {
+    guide = result.walkthrough;
+    renderGuide();
+  }
+}
+
+function guideNote(english) {
+  if (guide.source === "nook") {
+    return "From NookGaming, in English. Tick the choices as you make them.";
+  }
+  if (!english) {
+    return "From Seiya-Saiga, in Japanese. Tick the choices as you make them.";
+  }
+  if (translating) {
+    return "Translating to English…";
+  }
+  if (guide.translateFailed && !guide.translated) {
+    return "Couldn't translate it, so it stays in Japanese. Try again later.";
+  }
+  return "From Seiya-Saiga, translated by Google. Hover a line to see the Japanese.";
+}
+
+function renderGuide() {
+  const box = part("guide");
+  const spoilers = !!store.settings.walkthrough_spoilers;
+  const english = wantsEnglish();
+  part("guide-spoilers").checked = spoilers;
+  part("guide-english").checked = english;
+  part("guide-count").textContent = "";
+  const found = guide && guide.routes;
+  part("guide-overlay").hidden = !found;
+  part("guide-spoilers").parentElement.hidden = !found;
+  part("guide-english").parentElement.hidden = !found || guide.source === "nook";
+
+  if (!guide || guide.loading) {
+    box.replaceChildren(el("div", { class: "hint-text" }, "Looking for a walkthrough…"));
+    return;
+  }
+  if (guide.error || guide.missing) {
+    box.replaceChildren(
+      el(
+        "div",
+        { class: "guide-empty" },
+        el(
+          "span",
+          { class: "hint-text" },
+          guide.error ? "Couldn't load the walkthrough. Check your connection." : "No walkthrough found for this VN.",
+        ),
+        el(
+          "div",
+          { class: "row" },
+          guide.error && el("button", { class: "btn secondary small", onclick: () => loadGuide(false) }, "Try again"),
+          el("button", { class: "btn secondary small", onclick: () => pickGuide() }, "Find it…"),
+        ),
+      ),
+      sourcePicker(),
+    );
+    return;
+  }
+
+  const count = choiceCount(guide);
+  part("guide-count").textContent = count.total ? `${count.done}/${count.total}` : "";
+  const next = nextChoice(guide);
+
+  const tabs = el(
+    "div",
+    { class: "guide-tabs" },
+    guide.routes.map((route, i) =>
+      el(
+        "button",
+        { class: i === guide.route ? "on" : "", onclick: () => i !== guide.route && pickRoute(i) },
+        secret("span", {}, say(guide, route.name, english), !spoilers && i !== guide.route),
+      ),
+    ),
+  );
+  const route = guide.routes[guide.route];
+  const steps = el(
+    "div",
+    { class: "guide-steps" },
+    route.steps.map((_, i) =>
+      stepRow(guide, guide.route, i, {
+        spoilers,
+        english,
+        onMark: markGuide,
+        current: i === next,
+      }),
+    ),
+  );
+  const footer = el(
+    "div",
+    { class: "guide-footer" },
+    el(
+      "button",
+      { class: "link", onclick: () => call("open_url", { url: guide.url }) },
+      raw("span", {}, `${guide.source === "nook" ? "NookGaming" : "Seiya-Saiga"} · ${guide.title}`),
+    ),
+    el(
+      "div",
+      { class: "row" },
+      count.done > 0 && el("button", { class: "btn secondary small", onclick: clearRoute }, "Untick this route"),
+      el("button", { class: "btn secondary small", onclick: () => pickGuide(guide.source) }, "Wrong game?"),
+      el("button", { class: "btn secondary small", onclick: () => loadGuide(true) }, "Refresh"),
+    ),
+  );
+  const scroll = steps.scrollTop;
+  const sameRoute = box.dataset.route === String(guide.route);
+  box.dataset.route = String(guide.route);
+  box.replaceChildren(
+    el("div", { class: "guide-head" }, el("p", { class: "hint-text" }, guideNote(english)), sourcePicker()),
+    tabs,
+    steps,
+    footer,
+  );
+  const old = sameRoute ? lastScroll : null;
+  if (old !== null) {
+    steps.scrollTop = old;
+  } else {
+    const current = steps.querySelector(".current");
+    steps.scrollTop = current ? Math.max(0, current.offsetTop - steps.offsetTop - 60) : scroll;
+  }
+  steps.onscroll = () => (lastScroll = steps.scrollTop);
+  lastScroll = steps.scrollTop;
 }
 
 register({

@@ -92,6 +92,10 @@ fn defaults() -> Map<String, Value> {
         "clip_quality": "high",
         "clip_replay_seconds": 0,
         "clip_replay_hotkey": "Alt+S",
+        "walkthrough_enabled": true,
+        "walkthrough_hotkey": "Alt+W",
+        "walkthrough_spoilers": false,
+        "walkthrough_english": true,
         "screenshot_dir": "",
         "locale_emulator_path": "",
         "ntlea_path": "",
@@ -895,6 +899,7 @@ mod tests {
         assert_eq!(cfg.str("clip_hotkey"), "Alt+R");
         assert_eq!(cfg.str("clip_replay_hotkey"), "Ctrl+Alt+F9");
         assert_eq!(cfg.str("walkthrough_hotkey"), "Alt+W");
+        assert!(cfg.bool("walkthrough_enabled"));
     }
 
     fn add(cfg: &mut Config, key: &str, fields: Value) {

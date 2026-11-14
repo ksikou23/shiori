@@ -6,6 +6,7 @@ pub mod library;
 pub mod popups;
 pub mod screenshots;
 pub mod share;
+pub mod walkthrough;
 
 use std::sync::Arc;
 

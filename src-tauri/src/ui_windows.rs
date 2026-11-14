@@ -1,14 +1,16 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
+use serde_json::json;
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 
 use crate::capture::ScreenRect;
+use crate::state::Shared;
 use crate::winapi;
 
 pub const BROWSER_ARGS: &str =
@@ -103,6 +105,71 @@ fn popup(
         winapi::make_no_activate(hwnd.0 as isize);
     }
     Some(window)
+}
+
+const GUIDE: &str = "walkthrough";
+const GUIDE_SIZE: (f64, f64) = (380.0, 440.0);
+
+fn guide_position(shared: &Shared) -> Option<(i32, i32)> {
+    let cfg = shared.config.lock().unwrap();
+    let at = cfg.get("walkthrough_overlay_at")?;
+    Some((at.get(0)?.as_i64()? as i32, at.get(1)?.as_i64()? as i32))
+}
+
+pub fn hide_walkthrough(shared: &Shared) {
+    let Some(window) = shared.app.get_webview_window(GUIDE) else {
+        return;
+    };
+    if !window.is_visible().unwrap_or(false) {
+        return;
+    }
+    if let Ok(pos) = window.outer_position() {
+        let changes = serde_json::Map::from_iter([("walkthrough_overlay_at".to_string(), json!([pos.x, pos.y]))]);
+        let _ = shared.config.lock().unwrap().update(changes);
+    }
+    let _ = window.hide();
+}
+
+pub fn toggle_walkthrough(shared: &Arc<Shared>) {
+    let enabled = shared
+        .config
+        .lock()
+        .unwrap()
+        .get("walkthrough_enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    if !enabled {
+        hide_walkthrough(shared);
+        return;
+    }
+    let shown = shared
+        .app
+        .get_webview_window(GUIDE)
+        .is_some_and(|w| w.is_visible().unwrap_or(false));
+    if shown {
+        hide_walkthrough(shared);
+        return;
+    }
+    let shared = Arc::clone(shared);
+    std::thread::spawn(move || {
+        let snap = shared.snapshot();
+        let area = (snap.detected && snap.hwnd != 0)
+            .then(|| crate::capture::client_rect_on_screen(winapi::content_window(snap.hwnd)));
+        let Some(window) = popup(&shared.app, GUIDE, "walkthrough.html", GUIDE_SIZE.0, GUIDE_SIZE.1) else {
+            return;
+        };
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let gap = (16.0 * scale) as i32;
+        let width = (GUIDE_SIZE.0 * scale) as i32;
+        let (x, y) = match (guide_position(&shared), area) {
+            (Some(at), _) => at,
+            (None, Some(area)) => (area.right - width - gap, area.top + gap),
+            (None, None) => (gap * 6, gap * 6),
+        };
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+        let _ = window.show();
+        let _ = window.emit("walkthrough-changed", json!({ "key": snap.key }));
+    });
 }
 
 fn close_later(app: &AppHandle, label: &'static str, generation: &'static AtomicU64, seconds: f64) {

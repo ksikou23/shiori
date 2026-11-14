@@ -187,6 +187,7 @@ function generalTab() {
     ...coversSection(),
     ...vndbSection(),
     ...screenshotsSection(),
+    ...walkthroughSection(),
     ...localeSection(),
     ...appSection(),
     ...dataSection(),
@@ -547,6 +548,46 @@ function clipsSection() {
       },
       "Off: the clip keys stay free for other apps and nothing is recorded. Clips are saved as MP4 next " +
         "to your screenshots.",
+    ),
+    options,
+  ];
+}
+
+function walkthroughSection() {
+  const options = el(
+    "div",
+    { class: "walkthrough-options" },
+    el(
+      "div",
+      { class: "field" },
+      el("span", {}, "Walkthrough key"),
+      hotkeyInput(store.settings.walkthrough_hotkey, (value) => save({ walkthrough_hotkey: value })),
+    ),
+    hint("Shows or hides the walkthrough over the game. It only works while the game's window is in front."),
+    toggle(
+      "Translate to English",
+      store.settings.walkthrough_english !== false,
+      (on) => save({ walkthrough_english: on }),
+      "Google translates it the first time you open a walkthrough. Off: it stays in Japanese.",
+    ),
+    toggle(
+      "Show spoilers",
+      !!store.settings.walkthrough_spoilers,
+      (on) => save({ walkthrough_spoilers: on }),
+      "Off: route names and endings stay blurred until you click them.",
+    ),
+  );
+  options.hidden = store.settings.walkthrough_enabled === false;
+  return [
+    el("div", { class: "section-title" }, "Walkthrough", " ", el("span", { class: "labs-tag" }, "beta")),
+    toggle(
+      "Turn on walkthroughs",
+      store.settings.walkthrough_enabled !== false,
+      (on) => {
+        options.hidden = !on;
+        save({ walkthrough_enabled: on });
+      },
+      "Off: no walkthrough on VN pages, no window over the game, and the walkthrough key stays free.",
     ),
     options,
   ];

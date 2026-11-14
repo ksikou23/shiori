@@ -3808,6 +3808,7 @@ version = "2.4.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
+ "encoding_rs",
  "fancy-regex",
  "flate2",
  "image",

@@ -120,6 +120,7 @@ const HOTKEY_ID: i32 = 1;
 const MASCOT_HOTKEY_ID: i32 = 2;
 const CLIP_HOTKEY_ID: i32 = 3;
 const REPLAY_HOTKEY_ID: i32 = 4;
+const GUIDE_HOTKEY_ID: i32 = 5;
 
 fn game_in_front(pid: u32) -> bool {
     pid != 0 && winapi::window_pid(winapi::foreground_window()) == pid
@@ -156,6 +157,8 @@ pub fn run(shared: Arc<Shared>) {
     let mut clip_reported = false;
     let mut replay_active: Option<(u32, u32)> = None;
     let mut replay_reported = false;
+    let mut guide_active: Option<(u32, u32)> = None;
+    let mut guide_reported = false;
     let mut msg = MSG::default();
 
     loop {
@@ -165,7 +168,9 @@ pub fn run(shared: Arc<Shared>) {
                 if msg.message != WM_HOTKEY {
                     continue;
                 }
-                if msg.wParam.0 == REPLAY_HOTKEY_ID as usize {
+                if msg.wParam.0 == GUIDE_HOTKEY_ID as usize {
+                    crate::ui_windows::toggle_walkthrough(&shared);
+                } else if msg.wParam.0 == REPLAY_HOTKEY_ID as usize {
                     let shared = Arc::clone(&shared);
                     std::thread::spawn(move || crate::clip::save_replay(&shared));
                 } else if msg.wParam.0 == CLIP_HOTKEY_ID as usize {
@@ -181,7 +186,7 @@ pub fn run(shared: Arc<Shared>) {
             }
         }
 
-        let (hotkey, mascot_hotkey, clip_hotkey, replay_hotkey, replay_on, key_on) = {
+        let (hotkey, mascot_hotkey, clip_hotkey, replay_hotkey, replay_on, key_on, guide_hotkey, guide_on) = {
             let cfg = shared.config.lock().unwrap();
             (
                 cfg.str("screenshot_hotkey"),
@@ -190,6 +195,8 @@ pub fn run(shared: Arc<Shared>) {
                 cfg.str("clip_replay_hotkey"),
                 crate::clip::replay_length(&cfg) > 0,
                 crate::clip::key_on(&cfg),
+                cfg.str("walkthrough_hotkey"),
+                cfg.get("walkthrough_enabled").and_then(serde_json::Value::as_bool).unwrap_or(true),
             )
         };
         let wanted = if game_in_front(pid) {
@@ -226,6 +233,23 @@ pub fn run(shared: Arc<Shared>) {
                 "toast",
                 serde_json::json!({
                     "title": "Couldn't watch the replay key: another app already uses it",
+                    "ok": false,
+                }),
+            );
+        }
+        let guide_wanted = if guide_on && game_in_front(pid) {
+            parse(&guide_hotkey).filter(|combo| {
+                [wanted, mascot_wanted, clip_wanted, replay_wanted].iter().all(|other| *other != Some(*combo))
+            })
+        } else {
+            None
+        };
+        if !keep(GUIDE_HOTKEY_ID, &mut guide_active, guide_wanted) && !guide_reported {
+            guide_reported = true;
+            shared.emit(
+                "toast",
+                serde_json::json!({
+                    "title": "Couldn't watch the walkthrough key: another app already uses it",
                     "ok": false,
                 }),
             );
