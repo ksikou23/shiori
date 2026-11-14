@@ -85,13 +85,13 @@ fn defaults() -> Map<String, Value> {
         "screenshot_volume": 30,
         "clip_enabled": true,
         "clip_key_enabled": true,
-        "clip_hotkey": "Ctrl+Shift+R",
+        "clip_hotkey": "Alt+R",
         "clip_max_seconds": 60,
         "clip_fps": 30,
         "clip_audio": true,
         "clip_quality": "high",
         "clip_replay_seconds": 0,
-        "clip_replay_hotkey": "Ctrl+Shift+S",
+        "clip_replay_hotkey": "Alt+S",
         "screenshot_dir": "",
         "locale_emulator_path": "",
         "ntlea_path": "",
@@ -142,6 +142,12 @@ fn vn_of(entry: &Entry) -> String {
         .unwrap_or("")
         .to_string()
 }
+
+const OLD_CTRL_KEYS: [(&str, &str, &str); 3] = [
+    ("clip_hotkey", "Ctrl+Shift+R", "Alt+R"),
+    ("clip_replay_hotkey", "Ctrl+Shift+S", "Alt+S"),
+    ("walkthrough_hotkey", "Ctrl+Shift+W", "Alt+W"),
+];
 
 pub fn safe_filename(key: &str) -> String {
     let cleaned: String = key
@@ -380,6 +386,11 @@ impl Config {
         }
         if let Some(custom) = data.get_mut("presence_custom") {
             crate::presence::upgrade_templates(custom);
+        }
+        for (key, old, new) in OLD_CTRL_KEYS {
+            if data.get(key).and_then(Value::as_str) == Some(old) {
+                data.insert(key.to_string(), json!(new));
+            }
         }
         let mut games = BTreeMap::new();
         let mut filenames = HashMap::new();
@@ -869,6 +880,21 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("vnrpc-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         Config::load(&dir)
+    }
+
+    #[test]
+    fn old_ctrl_keys_move_to_alt() {
+        let mut cfg = library("ctrl-keys");
+        let changes = [
+            ("clip_hotkey", "Ctrl+Shift+R"),
+            ("clip_replay_hotkey", "Ctrl+Alt+F9"),
+            ("walkthrough_hotkey", "Ctrl+Shift+W"),
+        ];
+        cfg.update(changes.iter().map(|(k, v)| (k.to_string(), json!(v))).collect()).unwrap();
+        let cfg = Config::load(&cfg.dir);
+        assert_eq!(cfg.str("clip_hotkey"), "Alt+R");
+        assert_eq!(cfg.str("clip_replay_hotkey"), "Ctrl+Alt+F9");
+        assert_eq!(cfg.str("walkthrough_hotkey"), "Alt+W");
     }
 
     fn add(cfg: &mut Config, key: &str, fields: Value) {
