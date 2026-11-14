@@ -591,6 +591,109 @@ dialog[open] {
   margin-top: 8px;
 }
 
+.cloud-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cloud-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+}
+
+.cloud-pitch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.cloud-pitch b {
+  font-size: 15px;
+}
+
+.cloud-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cloud-avatar {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-hover);
+}
+
+.cloud-avatar-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.cloud-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.cloud-who b {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-via {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.cloud-via svg {
+  width: 13px;
+  height: 13px;
+}
+
+.cloud-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.cloud-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--subtle);
+}
+
+.cloud-dot.ok {
+  background: var(--green);
+}
+
+.cloud-links {
+  gap: 14px;
+  font-size: 13px;
+}
+
+.danger-text {
+  color: var(--red);
+}
+
 .hint-text {
   color: var(--muted);
   font-size: 12px;

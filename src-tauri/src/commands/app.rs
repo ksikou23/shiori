@@ -183,6 +183,7 @@ pub fn quit_app(app: &AppHandle, shared: &Shared) {
     crate::mascot::exiting();
     shared.send(Cmd::Quit);
     std::thread::sleep(std::time::Duration::from_millis(400));
+    crate::cloud::save_on_exit(shared);
     app.exit(0);
 }
 

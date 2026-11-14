@@ -6,7 +6,7 @@ import { ask, call, toast, toggle } from "../ui.js";
 import { hotkeyInput } from "../components/hotkey-input.js";
 import { renderThemeTab } from "../components/theme-tab.js";
 import { offerUpdate } from "../components/update.js";
-import { discordButton } from "../components/discord-button.js";
+import { discordButton, discordLogo } from "../components/discord-button.js";
 import { languagePicker } from "../components/language-picker.js";
 import { plural, t } from "../i18n.js";
 import { presenceBuilder } from "./presence.js";
@@ -645,8 +645,195 @@ function dataSection() {
         "another PC or keep a copy. It includes your VNDB token: don't share it.",
     ),
     el("div", { class: "row" }, exportButton, importButton),
+    el("div", { class: "field-label" }, "Cloud backup"),
+    cloudBox(),
   ];
 }
+
+const PRIVACY_URL = "https://shiori.maia.moe/privacy";
+
+function cloudDate(ms) {
+  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function cloudSize(bytes) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function cloudBox() {
+  const box = el("div", { class: "cloud-box" });
+  const privacy = () =>
+    el("button", { class: "link", onclick: () => call("open_url", { url: PRIVACY_URL }) }, "What's stored");
+
+  const show = (...children) => box.replaceChildren(...children);
+
+  const signedOut = () =>
+    show(
+      el(
+        "div",
+        { class: "cloud-card cloud-empty" },
+        el(
+          "div",
+          { class: "cloud-pitch" },
+          el("b", {}, "Keep your Library safe online"),
+          el(
+            "span",
+            { class: "muted" },
+            "Save your settings and Library online, then load them on another PC. You sign in with Discord: " +
+              "Shiori only gets your name and avatar.",
+          ),
+        ),
+        el(
+          "div",
+          { class: "row" },
+          el("button", { class: "btn discord-btn", onclick: signIn }, discordLogo(), "Sign in with Discord"),
+          privacy(),
+        ),
+      ),
+    );
+
+  const failed = () =>
+    show(
+      el("div", { class: "hint-text" }, "Couldn't reach the cloud. Check your connection."),
+      el("button", { class: "btn secondary small", onclick: refresh }, "Try again"),
+    );
+
+  const signedIn = (status) => {
+    const backup = status.backup;
+    const saved = backup?.updated
+      ? el(
+          "span",
+          { class: "cloud-saved" },
+          el("span", { class: "cloud-dot ok" }),
+          t("Last cloud save: {date}", { date: cloudDate(backup.updated) }),
+          backup.size ? el("span", { class: "muted" }, ` · ${cloudSize(backup.size)}`) : null,
+        )
+      : el("span", { class: "cloud-saved" }, el("span", { class: "cloud-dot" }), t("Nothing saved in the cloud yet."));
+    const saveButton = el("button", { class: "btn" }, "Save to cloud");
+    saveButton.onclick = async () => {
+      saveButton.disabled = true;
+      const result = await call("cloud_save");
+      saveButton.disabled = false;
+      if (result) {
+        toast("Saved to the cloud");
+        refresh();
+      }
+    };
+    const loadButton = el("button", { class: "btn secondary", disabled: !backup }, "Load from cloud");
+    loadButton.onclick = () => loadCloud(status);
+    const avatar = status.avatar_url
+      ? el("img", { class: "cloud-avatar", src: status.avatar_url, alt: "" })
+      : el("span", { class: "cloud-avatar cloud-avatar-empty" }, discordLogo());
+    show(
+      el(
+        "div",
+        { class: "cloud-card" },
+        el(
+          "div",
+          { class: "cloud-head" },
+          avatar,
+          el(
+            "div",
+            { class: "cloud-who" },
+            el("b", {}, status.name || "Discord"),
+            el("span", { class: "muted cloud-via" }, discordLogo(), "Discord"),
+          ),
+          el("button", { class: "btn secondary small", onclick: signOut }, "Sign out"),
+        ),
+        saved,
+        el("div", { class: "row" }, saveButton, loadButton),
+        toggle(
+          "Save to the cloud when Shiori closes",
+          !!store.settings.sync_auto_save,
+          (on) => save({ sync_auto_save: on }),
+          "Only when you quit Shiori RPC, not when you close its window.",
+        ),
+        toggle(
+          "Include my VNDB token",
+          !!store.settings.sync_vndb_token,
+          (on) => save({ sync_vndb_token: on }),
+          "So you don't have to paste it again on another PC. Off: it stays on this PC only.",
+        ),
+        el(
+          "div",
+          { class: "row cloud-links" },
+          privacy(),
+          el("button", { class: "link danger-text", onclick: deleteCloud }, "Delete my cloud data"),
+        ),
+      ),
+    );
+  };
+
+  async function refresh() {
+    show(el("div", { class: "hint-text" }, "Checking your cloud backup…"));
+    try {
+      const status = await invoke("cloud_status");
+      status.signed_in ? signedIn(status) : signedOut();
+    } catch {
+      failed();
+    }
+  }
+
+  async function signIn() {
+    show(
+      el("div", { class: "hint-text" }, "Finish signing in in your browser, then come back here."),
+    );
+    try {
+      const status = await invoke("cloud_login");
+      status.signed_in ? signedIn(status) : signedOut();
+      toast("Signed in");
+    } catch (error) {
+      toast(typeof error === "string" ? error : "Couldn't sign in", { error: true });
+      refresh();
+    }
+  }
+
+  async function signOut() {
+    await call("cloud_logout");
+    store.settings.sync_auto_save = false;
+    refresh();
+  }
+
+  async function deleteCloud() {
+    const sure = await ask(
+      "Delete my cloud data",
+      "This removes your cloud backup and signs you out on every PC. Your data on this PC stays.",
+      { yes: "Delete", danger: true },
+    );
+    if (sure) {
+      await call("cloud_delete");
+      toast("Your cloud data was deleted");
+      refresh();
+    }
+  }
+
+  async function loadCloud(status) {
+    const folder = await invoke("backup_folder");
+    const sure = await ask(
+      "Load from cloud",
+      t(
+        "Replace your settings and Library with the cloud save from {date}? What you have now is saved first in {folder}.",
+        { date: cloudDate(status.backup.updated), folder },
+      ),
+      { yes: "Replace", danger: true },
+    );
+    if (!sure) {
+      return;
+    }
+    const count = await call("cloud_load");
+    if (count !== undefined && count !== null) {
+      toast(t("Loaded {vns} and your settings", { vns: plural(count, "VN") }));
+      refresh();
+    }
+  }
+
+  refresh();
+  return box;
+}
+
 
 async function exportData() {
   const path = await pickSaveFile({

@@ -10,6 +10,8 @@ use crate::config::{safe_filename, Config, Entry};
 
 const FORMAT: i64 = 1;
 const MANIFEST: &str = "vnrpc-backup.json";
+const THIS_PC_ONLY: [&str; 4] = ["sync_token", "sync_user", "sync_auto_save", "sync_vndb_token"];
+const CLOUD_SECRETS: [&str; 1] = ["vndb_token"];
 
 pub fn default_name() -> String {
     chrono::Local::now()
@@ -34,8 +36,20 @@ fn local_cover(entry: &Entry) -> Option<PathBuf> {
 }
 
 pub fn export(cfg: &Config, dest: &Path) -> Result<usize, String> {
+    export_without(cfg, dest, &[])
+}
+
+pub fn export_for_cloud(cfg: &Config, dest: &Path) -> Result<usize, String> {
+    if cfg.bool("sync_vndb_token") {
+        export_without(cfg, dest, &[])
+    } else {
+        export_without(cfg, dest, &CLOUD_SECRETS)
+    }
+}
+
+fn export_without(cfg: &Config, dest: &Path, secrets: &[&str]) -> Result<usize, String> {
     let part = dest.with_extension("zip.part");
-    let result = write_zip(cfg, &part);
+    let result = write_zip(cfg, &part, secrets);
 
     match result {
         Ok(count) => {
@@ -49,7 +63,7 @@ pub fn export(cfg: &Config, dest: &Path) -> Result<usize, String> {
     }
 }
 
-fn write_zip(cfg: &Config, path: &Path) -> Result<usize, String> {
+fn write_zip(cfg: &Config, path: &Path, secrets: &[&str]) -> Result<usize, String> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -62,7 +76,11 @@ fn write_zip(cfg: &Config, path: &Path) -> Result<usize, String> {
         zip.write_all(bytes).map_err(|e| e.to_string())
     };
 
-    add(&mut zip, "config.yaml", yaml(cfg.data())?.as_bytes())?;
+    let mut settings = cfg.data().clone();
+    for key in THIS_PC_ONLY.iter().chain(secrets) {
+        settings.remove(*key);
+    }
+    add(&mut zip, "config.yaml", yaml(&settings)?.as_bytes())?;
 
     let mut covers = Map::new();
     let games = cfg.all_games();
@@ -124,6 +142,14 @@ fn read_yaml(zip: &mut ZipArchive<File>, name: &str) -> Result<Map<String, Value
 }
 
 pub fn import(cfg: &mut Config, src: &Path) -> Result<usize, String> {
+    import_keeping(cfg, src, &[])
+}
+
+pub fn import_from_cloud(cfg: &mut Config, src: &Path) -> Result<usize, String> {
+    import_keeping(cfg, src, &CLOUD_SECRETS)
+}
+
+fn import_keeping(cfg: &mut Config, src: &Path, secrets: &[&str]) -> Result<usize, String> {
     let file = File::open(src).map_err(|e| e.to_string())?;
     let mut zip = ZipArchive::new(file).map_err(|_| "not a Shiori RPC backup".to_string())?;
 
@@ -135,8 +161,18 @@ pub fn import(cfg: &mut Config, src: &Path) -> Result<usize, String> {
         return Err("this backup was made by a newer version of the app: update it first".into());
     }
 
-    let data =
+    let mut data =
         read_yaml(&mut zip, "config.yaml").map_err(|_| "the backup is missing its settings")?;
+    for key in THIS_PC_ONLY.iter().chain(secrets) {
+        let brought = data.get(*key).and_then(Value::as_str).is_some_and(|v| !v.is_empty());
+        if secrets.contains(key) && brought {
+            continue;
+        }
+        match cfg.get(key) {
+            Some(value) => data.insert(key.to_string(), value.clone()),
+            None => data.remove(*key),
+        };
+    }
 
     let mut games: Vec<(String, Entry)> = Vec::new();
     let names: Vec<String> = zip.file_names().map(str::to_string).collect();
@@ -174,4 +210,63 @@ pub fn import(cfg: &mut Config, src: &Path) -> Result<usize, String> {
     let count = games.len();
     cfg.replace_all(data, games).map_err(|e| e.to_string())?;
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh(name: &str) -> Config {
+        let dir = std::env::temp_dir().join(format!("shiori-backup-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        Config::load(&dir)
+    }
+
+    fn settings_in(zip: &Path) -> String {
+        let mut archive = ZipArchive::new(File::open(zip).unwrap()).unwrap();
+        String::from_utf8(read_entry(&mut archive, "config.yaml").unwrap()).unwrap()
+    }
+
+    fn set(cfg: &mut Config, pairs: &[(&str, Value)]) {
+        cfg.update(pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap();
+    }
+
+    #[test]
+    fn the_vndb_token_goes_to_the_cloud_only_when_asked() {
+        let mut cfg = fresh("cloud");
+        set(&mut cfg, &[("vndb_token", json!("tok-123")), ("sync_token", json!("sess"))]);
+        let zip = cfg.dir.join("cloud.zip");
+
+        export_for_cloud(&cfg, &zip).unwrap();
+        let plain = settings_in(&zip);
+        assert!(!plain.contains("tok-123") && !plain.contains("sess"));
+
+        set(&mut cfg, &[("sync_vndb_token", json!(true))]);
+        export_for_cloud(&cfg, &zip).unwrap();
+        let with_token = settings_in(&zip);
+        assert!(with_token.contains("tok-123") && !with_token.contains("sess"));
+
+        export(&cfg, &zip).unwrap();
+        assert!(!settings_in(&zip).contains("sess"));
+    }
+
+    #[test]
+    fn loading_from_the_cloud_keeps_or_brings_the_vndb_token() {
+        let mut cfg = fresh("restore");
+        set(&mut cfg, &[("vndb_token", json!("from-cloud")), ("sync_vndb_token", json!(true))]);
+        let with_token = cfg.dir.join("with.zip");
+        export_for_cloud(&cfg, &with_token).unwrap();
+        set(&mut cfg, &[("sync_vndb_token", json!(false))]);
+        let without = cfg.dir.join("without.zip");
+        export_for_cloud(&cfg, &without).unwrap();
+
+        set(&mut cfg, &[("vndb_token", json!("local")), ("sync_token", json!("sess"))]);
+        import_from_cloud(&mut cfg, &without).unwrap();
+        assert_eq!(cfg.str("vndb_token"), "local");
+        assert_eq!(cfg.str("sync_token"), "sess");
+
+        import_from_cloud(&mut cfg, &with_token).unwrap();
+        assert_eq!(cfg.str("vndb_token"), "from-cloud");
+        assert_eq!(cfg.str("sync_token"), "sess");
+    }
 }

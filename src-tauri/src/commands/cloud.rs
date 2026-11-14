@@ -1,0 +1,66 @@
+use std::sync::Arc;
+
+use serde_json::Value;
+use tauri::AppHandle;
+
+use super::{blocking, SharedState};
+use crate::cloud;
+use crate::state::{Cmd, Shared};
+
+#[tauri::command]
+pub async fn cloud_status(shared: SharedState<'_>) -> Result<Value, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || cloud::status(&shared)).await
+}
+
+#[tauri::command]
+pub async fn cloud_login(shared: SharedState<'_>) -> Result<Value, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || {
+        cloud::login(&shared)?;
+        cloud::status(&shared)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn cloud_save(shared: SharedState<'_>) -> Result<Value, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || cloud::upload(&shared, 60)).await
+}
+
+fn reloaded(shared: &Shared, app: &AppHandle) {
+    shared.send(Cmd::Reload);
+    super::app::allow_screenshot_folder(shared);
+    crate::mascot::apply_settings(app);
+    let settings: Value = shared.config.lock().unwrap().data().clone().into();
+    shared.emit("settings-changed", settings);
+    shared.emit("library-changed", serde_json::json!({}));
+}
+
+#[tauri::command]
+pub async fn cloud_load(shared: SharedState<'_>, app: AppHandle) -> Result<usize, String> {
+    let shared = Arc::clone(&shared);
+    let count = {
+        let shared = Arc::clone(&shared);
+        blocking(move || cloud::download(&shared)).await?
+    };
+    reloaded(&shared, &app);
+    Ok(count)
+}
+
+#[tauri::command]
+pub async fn cloud_delete(shared: SharedState<'_>) -> Result<(), String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || cloud::delete(&shared)).await
+}
+
+#[tauri::command]
+pub async fn cloud_logout(shared: SharedState<'_>) -> Result<(), String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || {
+        cloud::logout(&shared);
+        Ok(())
+    })
+    .await
+}

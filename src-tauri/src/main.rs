@@ -23,6 +23,7 @@ mod winapi;
 
 mod autostart;
 mod backup;
+mod cloud;
 mod images;
 mod launcher;
 mod crash;
@@ -289,6 +290,12 @@ fn main() {
             commands::walkthrough::walkthrough_route,
             commands::walkthrough::walkthrough_clear,
             commands::walkthrough::walkthrough_current,
+            commands::cloud::cloud_status,
+            commands::cloud::cloud_login,
+            commands::cloud::cloud_save,
+            commands::cloud::cloud_load,
+            commands::cloud::cloud_delete,
+            commands::cloud::cloud_logout,
             commands::walkthrough::walkthrough_translate,
             commands::walkthrough::toggle_walkthrough_overlay,
             commands::popups::rename_mascot,

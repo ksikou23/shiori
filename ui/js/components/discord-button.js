@@ -38,3 +38,5 @@ export function discordButton({ small = false, label = "Join the Discord" } = {}
     label,
   );
 }
+
+export { logo as discordLogo };

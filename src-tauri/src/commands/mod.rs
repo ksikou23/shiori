@@ -1,4 +1,5 @@
 pub mod app;
+pub mod cloud;
 pub mod covers;
 pub mod data;
 pub mod labs;
