@@ -13,7 +13,6 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
 };
 
-use crate::config::safe_filename;
 use crate::cutout;
 use crate::lang;
 use crate::personalities::{self, Lines};
@@ -78,6 +77,25 @@ fn with_characters<T>(f: impl FnOnce(&mut HashMap<String, Character>) -> T) -> T
 
 fn id_of(label: &str) -> &str {
     label.strip_prefix(WINDOW_PREFIX).unwrap_or(label)
+}
+
+pub(crate) fn safe_id(text: &str) -> String {
+    let id: String = text
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    if id.chars().all(|c| c == '_') {
+        "mascot".into()
+    } else {
+        id
+    }
+}
+
+pub(crate) fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && !id.starts_with('.')
+        && !id.ends_with('.')
+        && id.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c))
 }
 
 fn gallery_dir(shared: &Shared) -> PathBuf {
@@ -228,6 +246,9 @@ pub fn change_image(app: &AppHandle, id: &str, source: &Path) -> Result<(), Stri
     if id == BUILT_IN_ID {
         return Err("The default mascot's picture can't be changed.".into());
     }
+    if !valid_id(id) {
+        return Err("Unknown mascot.".into());
+    }
     let shared = shared(app);
     let ext = image_ext(source)?;
     let dir = gallery_dir(&shared);
@@ -245,7 +266,7 @@ pub fn add_to_gallery(shared: &Shared, source: &Path) -> Result<String, String> 
     let ext = image_ext(source)?;
 
     let stem = source.file_stem().unwrap_or_default().to_string_lossy().to_lowercase();
-    let base = safe_filename(&stem);
+    let base = safe_id(&stem);
     let (mut id, mut n) = (base.clone(), 2);
     while id == BUILT_IN_ID || file_for(shared, &id).is_some() {
         id = format!("{base}_{n}");
@@ -476,7 +497,7 @@ pub fn add_character(shared: &Shared, name: &str, url: &str) -> Result<(String, 
     if !url.starts_with("https://t.vndb.org/") {
         return Err("That image isn't from VNDB.".into());
     }
-    let id = safe_filename(&name.to_lowercase());
+    let id = safe_id(&name.to_lowercase());
     if file_for(shared, &id).is_some() {
         return Ok((id, false));
     }
@@ -559,7 +580,9 @@ pub fn remove_from_gallery(shared: &Shared, id: &str) -> Result<(), String> {
     if let Some(file) = file_for(shared, id) {
         std::fs::remove_file(file).map_err(|e| e.to_string())?;
     }
-    let _ = std::fs::remove_dir_all(voices_dir(shared, id));
+    if let Some(dir) = voices_dir(shared, id) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
     set_setting_for(shared, "mascot_balloons", id, Value::Null);
     set_setting_for(shared, "mascot_voice_volumes", id, Value::Null);
     set_setting_for(shared, SILENT, id, Value::Null);
@@ -1307,8 +1330,8 @@ pub fn toggle_view_only(app: &AppHandle, key: &str) {
     let _ = app.emit("settings-changed", settings);
 }
 
-fn voices_dir(shared: &Shared, id: &str) -> PathBuf {
-    gallery_dir(shared).join("voices").join(id)
+fn voices_dir(shared: &Shared, id: &str) -> Option<PathBuf> {
+    valid_id(id).then(|| gallery_dir(shared).join("voices").join(id))
 }
 
 fn audio_files(dir: &Path) -> Vec<PathBuf> {
@@ -1345,7 +1368,7 @@ fn natural_key(name: &str) -> String {
 }
 
 fn voice_for(shared: &Shared, id: &str, event: &str, index: Option<usize>) -> Option<String> {
-    let files = audio_files(&voices_dir(shared, id).join(event));
+    let files = audio_files(&voices_dir(shared, id)?.join(event));
     if files.is_empty() {
         return None;
     }
@@ -1357,7 +1380,9 @@ pub fn voices(shared: &Shared, id: &str) -> Map<String, Value> {
     VOICE_EVENTS
         .iter()
         .map(|event| {
-            let files: Vec<String> = audio_files(&voices_dir(shared, id).join(event))
+            let files: Vec<String> = voices_dir(shared, id)
+                .map(|dir| audio_files(&dir.join(event)))
+                .unwrap_or_default()
                 .iter()
                 .map(|f| f.to_string_lossy().to_string())
                 .collect();
@@ -1375,10 +1400,10 @@ pub fn add_voice(shared: &Shared, id: &str, event: &str, source: &Path) -> Resul
         .map(|e| e.to_string_lossy().to_lowercase())
         .filter(|ext| AUDIO_EXTS.contains(&ext.as_str()))
         .ok_or("Use an MP3, WAV, OGG, M4A, OPUS or FLAC file.")?;
-    let dir = voices_dir(shared, id).join(event);
+    let dir = voices_dir(shared, id).ok_or("Unknown mascot.")?.join(event);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    let stem = safe_filename(&source.file_stem().unwrap_or_default().to_string_lossy());
+    let stem = safe_id(&source.file_stem().unwrap_or_default().to_string_lossy());
     let (mut target, mut n) = (dir.join(format!("{stem}.{ext}")), 2);
     while target.exists() {
         target = dir.join(format!("{stem}_{n}.{ext}"));
@@ -1390,7 +1415,10 @@ pub fn add_voice(shared: &Shared, id: &str, event: &str, source: &Path) -> Resul
 
 pub fn remove_voice(shared: &Shared, file: &Path) -> Result<(), String> {
     let root = gallery_dir(shared).join("voices");
-    if !file.starts_with(&root) {
+    let sneaky = file
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir | std::path::Component::CurDir));
+    if sneaky || !file.starts_with(&root) {
         return Err("That file isn't a mascot voice.".into());
     }
     std::fs::remove_file(file).map_err(|e| e.to_string())
@@ -1648,6 +1676,23 @@ mod tests {
         let img = picture(20, 20, |x, y| [(x * 12) as u8, (y * 12) as u8, ((x + y) * 6) as u8]);
         let cleared = clear_flat_background(img);
         assert!(cleared.pixels().all(|p| p.0[3] == 255));
+    }
+
+    #[test]
+    fn mascot_ids_never_point_outside_the_folder() {
+        for bad in ["..", ".", "...", "../x", "..\\x", "a/b", "C:x", ""] {
+            let id = safe_id(bad);
+            assert!(valid_id(&id), "{bad:?} gave {id:?}");
+            assert!(!id.contains('.') && !id.contains('/') && !id.contains('\\'), "{bad:?} gave {id:?}");
+        }
+        assert_eq!(safe_id("Hoshina"), "Hoshina");
+        assert_eq!(safe_id("my.mascot"), "my_mascot");
+        assert_eq!(safe_id("ムラサメ"), "ムラサメ");
+        for bad in ["..", ".", "...", "a/b", "a\\b", ".hidden", "trail.", ""] {
+            assert!(!valid_id(bad), "{bad:?} should be refused");
+        }
+        assert!(valid_id("old.name"));
+        assert!(valid_id("murasame_2"));
     }
 
     #[test]

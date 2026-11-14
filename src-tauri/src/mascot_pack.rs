@@ -6,7 +6,6 @@ use serde_json::{json, Map, Value};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::config::safe_filename;
 use crate::mascot::{self, AUDIO_EXTS, BUILT_IN, BUILT_IN_ID, IMAGE_EXTS, VOICE_EVENTS};
 use crate::personalities;
 use crate::state::Shared;
@@ -141,7 +140,7 @@ fn import_into(
     image: &[u8],
     staging: &Path,
 ) -> Result<String, String> {
-    let staged = staging.join(format!("{}.{ext}", safe_filename(&name.to_lowercase())));
+    let staged = staging.join(format!("{}.{ext}", mascot::safe_id(&name.to_lowercase())));
     fs::write(&staged, image).map_err(|e| e.to_string())?;
     let id = mascot::add_to_gallery(shared, &staged)?;
     mascot::set_name(shared, &id, name);
@@ -215,7 +214,7 @@ fn voice_target(entry: &str) -> Option<(String, String)> {
     if stem.is_empty() || !AUDIO_EXTS.contains(&ext.as_str()) {
         return None;
     }
-    Some((event.to_string(), format!("{}.{ext}", safe_filename(stem))))
+    Some((event.to_string(), format!("{}.{ext}", mascot::safe_id(stem))))
 }
 
 fn read_limited(zip: &mut ZipArchive<File>, name: &str, limit: u64) -> Result<Vec<u8>, String> {
