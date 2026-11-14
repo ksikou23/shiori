@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use tauri::Manager;
 use windows::core::HSTRING;
 use windows::Foundation::TimeSpan;
-use windows::Media::Editing::{MediaClip, MediaComposition, MediaTrimmingPreference};
+use windows::Media::Editing::{BackgroundAudioTrack, MediaClip, MediaComposition, MediaTrimmingPreference};
 use windows::Media::MediaProperties::MediaEncodingProfile;
 use windows::Storage::Streams::{DataReader, IRandomAccessStream, InMemoryRandomAccessStream};
 use windows::Storage::{CreationCollisionOption, StorageFile, StorageFolder};
@@ -50,6 +50,7 @@ struct Active {
     output: Output,
     started: Instant,
     audio_sent: u64,
+    pcm: Option<Vec<u8>>,
     last_tick: i64,
     width: u32,
     height: u32,
@@ -168,9 +169,11 @@ impl Pipe {
                 )
             }
         };
+        let pcm = (self.audio && matches!(output, Output::Memory(_))).then(Vec::new);
         Ok(Active {
             encoder,
             output,
+            pcm,
             started: Instant::now(),
             audio_sent: 0,
             last_tick: 0,
@@ -194,28 +197,41 @@ impl Pipe {
     }
 
     fn push(&self, tick: i64) -> Result<(), String> {
-        let mut slot = self.slot.lock().unwrap();
-        if slot.is_none() {
+        if self.slot.lock().unwrap().is_none() {
             let (width, height) = {
                 let picture = self.picture.lock().unwrap();
                 (picture.width, picture.height)
             };
-            *slot = Some(self.new_encoder(width, height)?);
+            let mut fresh = self.new_encoder(width, height)?;
+            let late = Duration::from_nanos((now_ticks() - tick).clamp(0, TICKS) as u64 * 100);
+            fresh.started = Instant::now().checked_sub(late).unwrap_or_else(Instant::now);
+            self.slot.lock().unwrap().get_or_insert(fresh);
         }
-        let active = slot.as_mut().unwrap();
-        self.send(active, tick)
+        match self.slot.lock().unwrap().as_mut() {
+            Some(active) => self.send(active, tick),
+            None => Ok(()),
+        }
     }
 
     fn rotate(&self, next: Option<Output>) -> Result<Option<Active>, String> {
+        let Some((width, height)) = self.slot.lock().unwrap().as_ref().map(|a| (a.width, a.height)) else {
+            return Ok(None);
+        };
+        let fresh = match next {
+            Some(next) => {
+                *self.target.lock().unwrap() = Some(next);
+                Some(self.new_encoder(width, height)?)
+            }
+            None => None,
+        };
         let mut slot = self.slot.lock().unwrap();
         let Some(mut old) = slot.take() else {
             return Ok(None);
         };
         let tick = now_ticks();
         let _ = self.send(&mut old, tick);
-        if let Some(next) = next {
-            *self.target.lock().unwrap() = Some(next);
-            let mut fresh = self.new_encoder(old.width, old.height)?;
+        if let Some(mut fresh) = fresh {
+            fresh.started = Instant::now();
             self.send(&mut fresh, tick)?;
             *slot = Some(fresh);
         }
@@ -283,6 +299,9 @@ impl Pipe {
         if !chunk.is_empty() {
             active.encoder.send_audio_buffer(&chunk, 0).map_err(|e| e.to_string())?;
             active.audio_sent += (chunk.len() / BLOCK) as u64;
+            if let Some(pcm) = active.pcm.as_mut() {
+                pcm.extend_from_slice(&chunk);
+            }
         }
         Ok(())
     }
@@ -335,7 +354,7 @@ fn record_audio(pid: u32, stop: &AtomicBool) -> Result<(), String> {
     let _ = wasapi::initialize_mta();
     let format = wasapi::WaveFormat::new(16, 16, wasapi::SampleType::Int, SAMPLE_RATE as usize, CHANNELS as usize, None);
     let mut client = wasapi::AudioClient::new_application_loopback_client(pid, true).map_err(|e| e.to_string())?;
-    let mode = wasapi::StreamMode::EventsShared { autoconvert: true, buffer_duration_hns: 0 };
+    let mode = wasapi::StreamMode::EventsShared { autoconvert: true, buffer_duration_hns: 5_000_000 };
     client
         .initialize_client(&format, wasapi::Direction::Capture, mode, None)
         .map_err(|e| e.to_string())?;
@@ -607,6 +626,7 @@ fn stop(shared: &Arc<Shared>) -> Result<(), String> {
 
 struct Piece {
     bytes: Vec<u8>,
+    pcm: Vec<u8>,
     seconds: f64,
 }
 
@@ -625,9 +645,10 @@ fn finish_piece(active: Active) -> Option<Piece> {
         return None;
     };
     let stream = stream.clone();
+    let pcm = active.pcm.unwrap_or_default();
     active.encoder.finish().ok()?;
     let bytes = memory_bytes(&stream).ok()?;
-    (!bytes.is_empty()).then_some(Piece { bytes, seconds })
+    (!bytes.is_empty()).then_some(Piece { bytes, pcm, seconds })
 }
 
 fn trim(pieces: &mut VecDeque<Piece>, keep: u64) {
@@ -707,26 +728,61 @@ fn windows_path(path: &Path) -> HSTRING {
     HSTRING::from(path.to_string_lossy().replace('/', "\\"))
 }
 
-fn compose(pieces: &[(PathBuf, f64)], keep: f64, output: &Path, fps: u32, quality: f64) -> Result<(), String> {
+fn wav_bytes(pcm: &[u8]) -> Vec<u8> {
+    let size = pcm.len() as u32;
+    let rate = SAMPLE_RATE * BLOCK as u32;
+    let mut out = Vec::with_capacity(pcm.len() + 44);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + size).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&(CHANNELS as u16).to_le_bytes());
+    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(BLOCK as u16).to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&size.to_le_bytes());
+    out.extend_from_slice(pcm);
+    out
+}
+
+fn compose(pieces: &[(PathBuf, f64, &[u8])], keep: f64, output: &Path, fps: u32, quality: f64) -> Result<(), String> {
     let _ = wasapi::initialize_mta();
     let e = |e: windows::core::Error| e.to_string();
     let composition = MediaComposition::new().map_err(e)?;
-    let total: f64 = pieces.iter().map(|(_, s)| s).sum();
+    let total: f64 = pieces.iter().map(|(_, s, _)| s).sum();
     let mut cut = (total - keep).max(0.0);
     let mut first_file = None;
-    for (path, seconds) in pieces {
+    let mut clips = Vec::new();
+    let mut pcm = Vec::new();
+    for (path, seconds, sound) in pieces {
         if cut >= *seconds {
             cut -= seconds;
             continue;
         }
         let file = StorageFile::GetFileFromPathAsync(&windows_path(path)).map_err(e)?.join().map_err(e)?;
         let clip = MediaClip::CreateFromFileAsync(&file).map_err(e)?.join().map_err(e)?;
+        let skip = ((cut * f64::from(SAMPLE_RATE)) as usize * BLOCK).min(sound.len());
         if cut > 0.0 {
             clip.SetTrimTimeFromStart(TimeSpan { Duration: (cut * TICKS as f64) as i64 }).map_err(e)?;
             cut = 0.0;
         }
+        pcm.extend_from_slice(&sound[skip..]);
         composition.Clips().map_err(e)?.Append(&clip).map_err(e)?;
+        clips.push(clip);
         first_file.get_or_insert(file);
+    }
+    if !pcm.is_empty() {
+        let wav = output.with_extension("wav");
+        std::fs::write(&wav, wav_bytes(&pcm)).map_err(|e| e.to_string())?;
+        let file = StorageFile::GetFileFromPathAsync(&windows_path(&wav)).map_err(e)?.join().map_err(e)?;
+        let track = BackgroundAudioTrack::CreateFromFileAsync(&file).map_err(e)?.join().map_err(e)?;
+        for clip in &clips {
+            clip.SetVolume(0.0).map_err(e)?;
+        }
+        composition.BackgroundAudioTracks().map_err(e)?.Append(&track).map_err(e)?;
     }
     let first = first_file.ok_or("nothing recorded yet")?;
     let profile = MediaEncodingProfile::CreateFromFileAsync(&first).map_err(e)?.join().map_err(e)?;
@@ -783,7 +839,8 @@ fn save_replay_now(shared: &Arc<Shared>) -> Result<(PathBuf, String, u64), Strin
         }
         let keep = r.keep;
         trim(&mut r.pieces, keep);
-        let pieces: Vec<(Vec<u8>, f64)> = r.pieces.iter().map(|p| (p.bytes.clone(), p.seconds)).collect();
+        let pieces: Vec<(Vec<u8>, Vec<u8>, f64)> =
+            r.pieces.iter().map(|p| (p.bytes.clone(), p.pcm.clone(), p.seconds)).collect();
         (pieces, keep, r.session.key.clone(), r.session.pipe.fps, r.session.pipe.quality)
     };
     if pieces.is_empty() {
@@ -795,10 +852,10 @@ fn save_replay_now(shared: &Arc<Shared>) -> Result<(PathBuf, String, u64), Strin
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
     let mut files = Vec::new();
-    for (i, (bytes, seconds)) in pieces.iter().enumerate() {
+    for (i, (bytes, pcm, seconds)) in pieces.iter().enumerate() {
         let path = temp.join(format!("{i:03}.mp4"));
         std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-        files.push((path, *seconds));
+        files.push((path, *seconds, pcm.as_slice()));
     }
     let rendered = temp.join("clip.mp4");
     let result = compose(&files, keep as f64, &rendered, fps, quality).and_then(|()| {
@@ -811,7 +868,7 @@ fn save_replay_now(shared: &Arc<Shared>) -> Result<(PathBuf, String, u64), Strin
     });
     let _ = std::fs::remove_dir_all(&temp);
     let path = result.map_err(|e| format!("couldn't save the clip ({e})"))?;
-    let seconds = files.iter().map(|(_, s)| s).sum::<f64>().min(keep as f64).round() as u64;
+    let seconds = files.iter().map(|(_, s, _)| s).sum::<f64>().min(keep as f64).round() as u64;
     Ok((path, key, seconds))
 }
 
@@ -854,7 +911,7 @@ mod tests {
 
     #[test]
     fn replay_keeps_just_enough_pieces() {
-        let mut pieces: VecDeque<Piece> = (0..10).map(|_| Piece { bytes: vec![1], seconds: 10.0 }).collect();
+        let mut pieces: VecDeque<Piece> = (0..10).map(|_| Piece { bytes: vec![1], pcm: Vec::new(), seconds: 10.0 }).collect();
         trim(&mut pieces, 30);
         assert_eq!(pieces.len(), 4);
     }
