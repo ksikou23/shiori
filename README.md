@@ -48,7 +48,7 @@
     <td width="50%" valign="top">
       <img src="image/share-card.png" width="100%" alt="My month in visual novels">
       <h3>Share your reading</h3>
-      “My week / month in visual novels” as an image to paste on Discord, and a yearly recap on <a href="https://wrapped.maia.moe">wrapped.maia.moe</a>.
+      “My week / month in visual novels” as an image to paste on Discord, and a yearly recap on <a href="https://shiori.maia.moe/wrapped">shiori.maia.moe/wrapped</a>.
     </td>
   </tr>
   <tr>

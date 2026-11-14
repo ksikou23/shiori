@@ -12,7 +12,7 @@ use crate::config::Entry;
 use crate::state::Shared;
 use crate::{clipboard, images, screenshots};
 
-const WRAPPED_SITE: &str = "https://wrapped.maia.moe/";
+const WRAPPED_SITE: &str = "https://shiori.maia.moe/wrapped";
 
 #[tauri::command(async)]
 pub fn share_games(shared: SharedState) -> Vec<Value> {
@@ -291,7 +291,7 @@ fn short_link(packed: &str) -> Option<String> {
         .build()
         .ok()?;
     let answer: Value = client
-        .post(format!("{WRAPPED_SITE}api/r"))
+        .post(format!("{WRAPPED_SITE}/api/r"))
         .json(&json!({ "d": packed }))
         .send()
         .ok()?
@@ -301,7 +301,7 @@ fn short_link(packed: &str) -> Option<String> {
         .ok()?;
     answer["url"]
         .as_str()
-        .filter(|url| url.starts_with(WRAPPED_SITE))
+        .filter(|url| url.starts_with(&format!("{WRAPPED_SITE}/r/")))
         .map(str::to_string)
 }
 
