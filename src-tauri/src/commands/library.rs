@@ -149,6 +149,16 @@ fn library_search_names(entry: &Entry) -> Vec<String> {
     search_name_forms(names)
 }
 
+fn library_brand(brand: BrandDetails) -> Value {
+    let search_names = search_name_forms([brand.name.clone(), brand.furigana.clone()]);
+    json!({
+        "id": brand.id,
+        "name": brand.name,
+        "furigana": brand.furigana,
+        "search_names": search_names,
+    })
+}
+
 fn vndb_search_names(vn: &VnResult) -> Vec<String> {
     search_name_forms(
         [vn.title.clone(), vn.alt_title.clone()]
@@ -264,7 +274,7 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
 }
 
 #[tauri::command]
-pub async fn get_library_brands(shared: SharedState<'_>) -> Result<Vec<BrandDetails>, String> {
+pub async fn get_library_brands(shared: SharedState<'_>) -> Result<Vec<Value>, String> {
     let shared = Arc::clone(&shared);
     blocking(move || {
         let mut ids = {
@@ -313,7 +323,7 @@ pub async fn get_library_brands(shared: SharedState<'_>) -> Result<Vec<BrandDeta
                 eprintln!("{error}");
             }
         }
-        Ok(brands)
+        Ok(brands.into_iter().map(library_brand).collect())
     })
     .await
 }
@@ -788,8 +798,8 @@ pub async fn get_wishlist(shared: SharedState<'_>) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        kunrei_variant, library_search_names, romaji_variant, search_name_forms,
-        valid_erogamescape_update,
+        kunrei_variant, library_brand, library_search_names, romaji_variant, search_name_forms,
+        valid_erogamescape_update, BrandDetails,
     };
     use serde_json::{json, Map};
 
@@ -816,6 +826,19 @@ mod tests {
         ] {
             assert!(names.iter().any(|name| name == expected), "{expected}");
         }
+    }
+
+    #[test]
+    fn brand_search_names_include_hiragana_and_romanized_furigana() {
+        let brand = library_brand(BrandDetails {
+            id: 1171,
+            name: "枕".into(),
+            furigana: "マクラ".into(),
+        });
+        let names = brand["search_names"].as_array().unwrap();
+
+        assert!(names.iter().any(|name| name == "まくら"));
+        assert!(names.iter().any(|name| name == "makura"));
     }
 
     #[test]

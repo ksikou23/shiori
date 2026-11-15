@@ -136,6 +136,107 @@
   width: 280px;
 }
 
+.lib-filter {
+  position: relative;
+  width: 280px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.lib-filter-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 38px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+.lib-filter-control:focus-within {
+  border-color: var(--accent);
+}
+
+.lib-head .lib-filter-control input {
+  flex: 1;
+  width: 80px;
+  min-width: 80px;
+  height: 28px;
+  padding: 3px 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.lib-filter-chips {
+  display: contents;
+}
+
+.lib-filter .lib-filter-chip {
+  flex: none;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 6px 2px 8px;
+  font-size: 12px;
+}
+
+.lib-filter-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-filter-chip button {
+  flex: none;
+  padding: 0 2px;
+}
+
+.lib-filter-chip.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lib-filter-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: 6px;
+  max-height: 260px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 18px -8px rgb(0 0 0 / 0.45);
+}
+
+.lib-filter-suggestions[hidden] {
+  display: none;
+}
+
+.lib-filter-suggestion {
+  max-width: 100%;
+  border: 0;
+  color: var(--text);
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lib-filter-suggestion:hover,
+.lib-filter-suggestion.on {
+  outline: 1px solid var(--accent);
+}
+
 .lib-title {
   display: flex;
   align-items: center;

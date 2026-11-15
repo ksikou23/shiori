@@ -35,7 +35,20 @@ const TEMPLATE = `
           <button data-v="years" role="menuitemradio">Shelves by year</button>
         </div>
       </div>
-      <input type="search" data-id="filter" placeholder="Filter…" />
+      <div class="lib-filter" data-id="filter-container">
+        <div class="lib-filter-control">
+          <div class="lib-filter-chips" data-id="filter-chips"></div>
+          <input
+            type="search"
+            data-id="filter"
+            placeholder="Filter…"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+          />
+        </div>
+        <div class="lib-filter-suggestions" data-id="filter-suggestions" role="listbox" hidden></div>
+      </div>
     </div>
   </div>
 
@@ -126,6 +139,11 @@ let brandById = new Map();
 let selectedBrandId = null;
 let brandsAsked = false;
 let datesAsked = false;
+let selectedFilterBrandIds = [];
+let selectedFilterYears = [];
+let activeFilterTokenIndex = -1;
+let brandSuggestionsOpen = false;
+let brandSuggestionIndex = -1;
 
 const part = (id) => $(`[data-id="${id}"]`, root);
 
@@ -135,7 +153,99 @@ function build(container) {
   part("sort").querySelector('[data-v="furigana"]').textContent = t("Furigana");
   part("brand-sort").querySelector('[data-v="furigana"]').textContent = t("Furigana");
 
-  part("filter").oninput = render;
+  part("filter").oninput = () => {
+    brandSuggestionsOpen = true;
+    activeFilterTokenIndex = -1;
+    brandSuggestionIndex = -1;
+    render();
+  };
+  part("filter").onfocus = () => {
+    brandSuggestionsOpen = true;
+    brandSuggestionIndex = -1;
+    renderFilterControls();
+  };
+  part("filter").onkeydown = (event) => {
+    const input = part("filter");
+    const candidates = brandSuggestionsOpen ? filterCandidates(input.value) : [];
+    const hasExplicitFilterPrefix = /(?:^|\s)(?:brand|year):/i.test(input.value.trim());
+    if (event.key === "ArrowDown" && candidates.length) {
+      event.preventDefault();
+      brandSuggestionIndex =
+        brandSuggestionIndex < 0 ? 0 : (brandSuggestionIndex + 1) % candidates.length;
+      renderFilterControls();
+    } else if (event.key === "ArrowUp" && candidates.length) {
+      event.preventDefault();
+      brandSuggestionIndex =
+        brandSuggestionIndex < 0
+          ? candidates.length - 1
+          : (brandSuggestionIndex - 1 + candidates.length) % candidates.length;
+      renderFilterControls();
+    } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      const current =
+        activeFilterTokenIndex >= 0
+          ? part("filter-chips").querySelectorAll("[data-filter-token-index]")[
+              activeFilterTokenIndex
+            ]
+          : input;
+      if (current && focusFilterVertically(current, event.key === "ArrowUp" ? -1 : 1)) {
+        event.preventDefault();
+      }
+    } else if (
+      event.key === "Enter" &&
+      candidates.length &&
+      (brandSuggestionIndex >= 0 || (candidates.length === 1 && hasExplicitFilterPrefix))
+    ) {
+      event.preventDefault();
+      selectFilterCandidate(candidates[brandSuggestionIndex >= 0 ? brandSuggestionIndex : 0]);
+    } else if (event.key === "Enter" && brandSuggestionsOpen) {
+      brandSuggestionsOpen = false;
+      renderFilterControls();
+    } else if (event.key === "Escape" && brandSuggestionsOpen) {
+      event.preventDefault();
+      if (brandSuggestionIndex >= 0) {
+        brandSuggestionIndex = -1;
+      } else {
+        brandSuggestionsOpen = false;
+      }
+      renderFilterControls();
+    } else if (event.key === "ArrowRight" && activeFilterTokenIndex >= 0) {
+      event.preventDefault();
+      if (activeFilterTokenIndex + 1 < selectedFilterTokens().length) {
+        focusFilterToken(activeFilterTokenIndex + 1);
+      } else {
+        focusFilterInputAtStart();
+      }
+    } else if (
+      event.key === "ArrowLeft" &&
+      input.selectionStart === 0 &&
+      input.selectionEnd === 0 &&
+      selectedFilterTokens().length
+    ) {
+      event.preventDefault();
+      focusFilterToken(
+        activeFilterTokenIndex >= 0
+          ? Math.max(0, activeFilterTokenIndex - 1)
+          : selectedFilterTokens().length - 1,
+      );
+    } else if (
+      (event.key === "Backspace" || event.key === "Delete") &&
+      activeFilterTokenIndex >= 0
+    ) {
+      event.preventDefault();
+      removeFilterTokenAt(activeFilterTokenIndex);
+    } else if (event.key === "Backspace" && !input.value && selectedFilterTokens().length) {
+      event.preventDefault();
+      removeFilterTokenAt(selectedFilterTokens().length - 1);
+    } else if (
+      event.key === "Backspace" &&
+      input.selectionStart === 0 &&
+      input.selectionEnd === 0 &&
+      selectedFilterTokens().length
+    ) {
+      event.preventDefault();
+      focusFilterToken(selectedFilterTokens().length - 1);
+    }
+  };
   part("status").onchange = render;
   part("wishlist").onclick = () => show("vndb-lists");
   part("reverse").onclick = () => {
@@ -168,6 +278,10 @@ function build(container) {
   document.addEventListener("click", (event) => {
     if (!part("view-menu").contains(event.target)) {
       part("view-list").hidden = true;
+    }
+    if (!part("filter-container").contains(event.target) && brandSuggestionsOpen) {
+      brandSuggestionsOpen = false;
+      renderFilterControls();
     }
   });
 
@@ -217,6 +331,290 @@ function gameBrandName(game) {
     brandById.get(String(game.brand_id))?.name ||
     t("Brand {id}", { id: game.brand_id })
   );
+}
+
+function matchesFilter(game, terms) {
+  const gameBrandId = game.brand_id ? String(game.brand_id) : UNKNOWN_BRAND_ID;
+  if (selectedFilterBrandIds.length && !selectedFilterBrandIds.includes(gameBrandId)) {
+    return false;
+  }
+  if (selectedFilterYears.length && !selectedFilterYears.includes(yearOf(game))) {
+    return false;
+  }
+  if (!terms.length) {
+    return true;
+  }
+  const brand = game.brand_id ? brandById.get(String(game.brand_id)) : null;
+  const brandNames = game.brand_id
+    ? [brand?.name, brand?.furigana, ...(brand?.search_names || [])]
+    : [t("Unknown brand")];
+  const names = [game.name, ...(game.search_names || []), ...brandNames].map((name) =>
+    String(name || "").toLowerCase(),
+  );
+  return terms.every((term) => names.some((name) => name.includes(term)));
+}
+
+function filterBrandCandidates(query) {
+  const brands = [...brandById.values()];
+  if (games.some((game) => !game.brand_id)) {
+    brands.push({ id: UNKNOWN_BRAND_ID, name: t("Unknown brand"), search_names: [] });
+  }
+  return brands
+    .filter((brand) => String(brand.name || "").trim())
+    .filter((brand) => !selectedFilterBrandIds.includes(String(brand.id)))
+    .filter((brand) =>
+      [brand.name, brand.furigana, ...(brand.search_names || [])].some((name) =>
+        String(name || "")
+          .toLowerCase()
+          .includes(query),
+      ),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, "ja"))
+    .slice(0, 8);
+}
+
+function filterYearCandidates(query) {
+  return [...new Set(games.map(yearOf).filter(Boolean))]
+    .filter((year) => year === query && !selectedFilterYears.includes(year))
+    .sort((a, b) => b.localeCompare(a))
+    .map((year) => ({ type: "year", year }));
+}
+
+function filterCandidates(value) {
+  const query = value.trim();
+  const prefixCandidates = filterPrefixCandidates(query);
+  if (prefixCandidates) {
+    return prefixCandidates;
+  }
+  if (/(?:^|\s)brand:/i.test(query)) {
+    return filterBrandCandidates(brandSuggestionQuery(query)).map((brand) => ({
+      type: "brand",
+      brand,
+    }));
+  }
+  const year = yearSuggestionQuery(query);
+  if (year) {
+    return filterYearCandidates(year);
+  }
+  return filterBrandCandidates(brandSuggestionQuery(query)).map((brand) => ({
+    type: "brand",
+    brand,
+  }));
+}
+
+function filterPrefixCandidates(query) {
+  const normalized = query.toLowerCase();
+  if (normalized === "brand:" || normalized === "year:") {
+    return null;
+  }
+  const prefixes = ["brand:", "year:"].filter((prefix) => prefix.startsWith(normalized));
+  return prefixes.length ? prefixes.map((prefix) => ({ type: "prefix", prefix })) : null;
+}
+
+function filterBrandName(id) {
+  if (id === UNKNOWN_BRAND_ID) {
+    return t("Unknown brand");
+  }
+  return brandById.get(id)?.name || t("Brand {id}", { id });
+}
+
+function brandSuggestionQuery(value) {
+  const query = value.trim();
+  const explicitBrandQuery = /(?:^|\s)brand:\s*(.*)$/i.exec(query);
+  return (explicitBrandQuery ? explicitBrandQuery[1] : query).trim().toLowerCase();
+}
+
+function yearSuggestionQuery(value) {
+  return /(?:^|\s)(?:year:\s*)?(\d{4})$/i.exec(value.trim())?.[1] || null;
+}
+
+function filterTextAfterCandidateSelection(value, candidate) {
+  const prefix =
+    candidate.type === "brand"
+      ? /(?:^|\s)brand:\s*/i.exec(value)
+      : /(?:^|\s)(?:year:\s*)?\d{4}$/i.exec(value);
+  return prefix ? value.slice(0, prefix.index).trim() : "";
+}
+
+function selectedFilterTokens() {
+  return [
+    ...selectedFilterBrandIds.map((id) => ({ type: "brand", id })),
+    ...selectedFilterYears.map((year) => ({ type: "year", year })),
+  ];
+}
+
+function focusFilterInputAtStart() {
+  activeFilterTokenIndex = -1;
+  renderFilterControls();
+  const input = part("filter");
+  input.focus();
+  input.setSelectionRange(0, 0);
+}
+
+function focusFilterToken(index) {
+  if (index < 0 || index >= selectedFilterTokens().length) {
+    return false;
+  }
+  activeFilterTokenIndex = index;
+  part("filter").focus();
+  renderFilterControls();
+  return true;
+}
+
+function focusFilterVertically(current, direction) {
+  const chips = [...part("filter-chips").querySelectorAll("[data-filter-token-index]")];
+  const input = part("filter");
+  const currentRect = current.getBoundingClientRect();
+  const currentTop = currentRect.top;
+  const currentCenter = currentRect.left + currentRect.width / 2;
+  const isInDirection = (rect) =>
+    direction < 0 ? rect.top < currentTop - 6 : rect.top > currentTop + 6;
+  const chipCandidates = chips
+    .filter((element) => element !== current)
+    .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+    .filter(({ rect }) => isInDirection(rect));
+  const inputRect = input.getBoundingClientRect();
+  const candidates =
+    chipCandidates.length || current === input
+      ? chipCandidates
+      : direction > 0 || isInDirection(inputRect)
+        ? [{ element: input, rect: inputRect }]
+        : [];
+  if (!candidates.length) {
+    return false;
+  }
+
+  const nextRow =
+    direction < 0
+      ? Math.max(...candidates.map(({ rect }) => rect.top))
+      : Math.min(...candidates.map(({ rect }) => rect.top));
+  const target = candidates
+    .filter(({ rect }) => Math.abs(rect.top - nextRow) <= 2)
+    .sort(
+      (a, b) =>
+        Math.abs(a.rect.left + a.rect.width / 2 - currentCenter) -
+        Math.abs(b.rect.left + b.rect.width / 2 - currentCenter),
+    )[0]?.element;
+  if (!target) {
+    return false;
+  }
+  if (target === input) {
+    focusFilterInputAtStart();
+  } else {
+    focusFilterToken(Number(target.dataset.filterTokenIndex));
+  }
+  return true;
+}
+
+function removeFilterTokenAt(index) {
+  const token = selectedFilterTokens()[index];
+  if (!token) {
+    return;
+  }
+  if (token.type === "brand") {
+    selectedFilterBrandIds = selectedFilterBrandIds.filter((id) => id !== token.id);
+  } else {
+    selectedFilterYears = selectedFilterYears.filter((year) => year !== token.year);
+  }
+  activeFilterTokenIndex =
+    selectedFilterTokens().length > 0 ? Math.min(index, selectedFilterTokens().length - 1) : -1;
+  brandSuggestionsOpen = true;
+  brandSuggestionIndex = -1;
+  render();
+  part("filter").focus();
+}
+
+function renderFilterControls() {
+  const input = part("filter");
+  const suggestions = part("filter-suggestions");
+  const tokens = selectedFilterTokens();
+  part("filter-chips").replaceChildren(
+    ...tokens.map((token, index) =>
+      el(
+        "span",
+        {
+          class: `chip lib-filter-chip ${index === activeFilterTokenIndex ? "selected" : ""}`,
+          "data-filter-token-index": String(index),
+        },
+        el(
+          "span",
+          { class: "lib-filter-chip-label" },
+          token.type === "brand" ? `brand:${filterBrandName(token.id)}` : `year:${token.year}`,
+        ),
+        el(
+          "button",
+          {
+            type: "button",
+            title: "Remove",
+            "aria-label": "Remove",
+            tabindex: "-1",
+            onclick: (event) => {
+              event.stopPropagation();
+              removeFilterTokenAt(index);
+            },
+          },
+          "×",
+        ),
+      ),
+    ),
+  );
+
+  const candidates = brandSuggestionsOpen ? filterCandidates(input.value) : [];
+  brandSuggestionIndex = Math.min(brandSuggestionIndex, Math.max(0, candidates.length - 1));
+  input.setAttribute("aria-expanded", String(candidates.length > 0));
+  suggestions.hidden = candidates.length === 0;
+  suggestions.replaceChildren(
+    ...candidates.map((candidate, index) => {
+      const label =
+        candidate.type === "brand"
+          ? `brand:${candidate.brand.name}`
+          : candidate.type === "year"
+            ? `year:${candidate.year}`
+            : candidate.prefix;
+      return el(
+        "button",
+        {
+          type: "button",
+          class: `chip lib-filter-chip lib-filter-suggestion ${index === brandSuggestionIndex ? "on" : ""}`,
+          role: "option",
+          "aria-selected": String(index === brandSuggestionIndex),
+          onclick: (event) => {
+            event.preventDefault();
+            selectFilterCandidate(candidate);
+          },
+        },
+        el("span", { class: "lib-filter-chip-label" }, label),
+      );
+    }),
+  );
+}
+
+function selectFilterCandidate(candidate) {
+  const input = part("filter");
+  if (candidate.type === "prefix") {
+    input.value = candidate.prefix;
+    brandSuggestionsOpen = true;
+  } else if (candidate.type === "brand") {
+    const id = String(candidate.brand.id);
+    if (!selectedFilterBrandIds.includes(id)) {
+      selectedFilterBrandIds.push(id);
+    }
+    input.value = filterTextAfterCandidateSelection(input.value, candidate);
+    brandSuggestionsOpen = true;
+  } else {
+    if (!selectedFilterYears.includes(candidate.year)) {
+      selectedFilterYears.push(candidate.year);
+    }
+    input.value = filterTextAfterCandidateSelection(input.value, candidate);
+    brandSuggestionsOpen = true;
+  }
+  activeFilterTokenIndex = -1;
+  brandSuggestionIndex = -1;
+  render();
+  part("filter").focus();
+  if (candidate.type === "prefix") {
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
 }
 
 function brandView(shown, most, view, brandSort, brandReverse) {
@@ -431,6 +829,7 @@ function weekSeconds(daily) {
 }
 
 function render() {
+  renderFilterControls();
   const sort = SORTERS[store.settings.library_sort] ? store.settings.library_sort : "most";
   segmented(part("sort"), sort, (value) => {
     store.settings.library_sort = value;
@@ -484,16 +883,14 @@ function render() {
     call("fill_release_dates").catch(() => {});
   }
 
-  const filter = part("filter").value.trim().toLowerCase();
+  const filterTerms = part("filter").value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
   const status = part("status").value;
   const shown = games
-    .filter(
-      (game) =>
-        !filter ||
-        [game.name, ...(game.search_names || [])].some((name) =>
-          String(name || "").toLowerCase().includes(filter),
-        ),
-    )
+    .filter((game) => matchesFilter(game, filterTerms))
     .filter((game) => !status || game.status === status)
     .sort(SORTERS[sort]);
   if (reverse) {
@@ -686,7 +1083,21 @@ register({
   id: "library",
   build,
   show: (params) => {
-    if (params.resetBrandSelection) {
+    if (params.filterBrandId !== undefined && params.filterBrandId !== null) {
+      selectedBrandId = null;
+      selectedFilterBrandIds = [String(params.filterBrandId)];
+      selectedFilterYears = [];
+      activeFilterTokenIndex = -1;
+      brandSuggestionsOpen = false;
+      brandSuggestionIndex = -1;
+      part("filter").value = "";
+    } else if (params.brandId !== undefined && params.brandId !== null) {
+      selectedBrandId = String(params.brandId);
+      if (store.settings.library_group_by_brand !== true) {
+        store.settings.library_group_by_brand = true;
+        call("update_settings", { changes: { library_group_by_brand: true } }).catch(() => {});
+      }
+    } else if (params.resetBrandSelection) {
       selectedBrandId = null;
     }
     return load();
