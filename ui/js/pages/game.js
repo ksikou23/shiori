@@ -52,6 +52,7 @@ const TEMPLATE = `
         <button class="path" data-id="path" title="Show in folder"></button>
         <div class="row" data-id="vndb"></div>
         <div class="row" data-id="erogamescape"></div>
+        <div class="row" data-id="brand"></div>
         <button class="link" data-id="change-cover">Change VN / cover…</button>
       </div>
     </div>
@@ -193,6 +194,7 @@ let guide = null;
 let guideFor = "";
 let lastScroll = null;
 let translating = false;
+let brandDetailsPromise = null;
 
 const part = (id) => $(`[data-id="${id}"]`, root);
 
@@ -259,6 +261,7 @@ async function load() {
 
   renderVndb(entry);
   renderErogameScape(entry);
+  renderBrand(entry);
   renderStatus(entry);
   renderPrivacy(entry.privacy || "full");
   renderVote(entry);
@@ -372,6 +375,45 @@ function renderErogameScape(entry) {
       t("ErogameScape ID {id}", { id }),
     ),
   );
+}
+
+function renderBrand(entry) {
+  const box = part("brand");
+  const brandId = entry.erogamescape_brand_id;
+  if (brandId === undefined || brandId === null) {
+    box.replaceChildren();
+    return;
+  }
+
+  const name = el(
+    "button",
+    {
+      class: "link",
+      onclick: () => show("library", { filterBrandId: brandId }),
+    },
+    t("Brand {id}", { id: brandId }),
+  );
+  box.replaceChildren(el("span", { class: "muted small-text" }, t("Brand")), name);
+
+  if (!brandDetailsPromise) {
+    brandDetailsPromise = call("get_library_brands")
+      .then((brands) => new Map(brands.map((brand) => [String(brand.id), brand])))
+      .catch((error) => {
+        brandDetailsPromise = null;
+        throw error;
+      });
+  }
+  brandDetailsPromise
+    .then((brands) => {
+      if (game?.entry?.erogamescape_brand_id !== brandId) {
+        return;
+      }
+      const brandName = brands.get(String(brandId))?.name;
+      if (brandName) {
+        name.textContent = brandName;
+      }
+    })
+    .catch(() => {});
 }
 
 async function confirmMatch() {
