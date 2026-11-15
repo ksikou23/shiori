@@ -38,6 +38,11 @@ const TEMPLATE = `
 
 let root;
 let tab = "general";
+const DISPLAY_TITLE_SOURCES = [
+  ["erogamescape", "ErogameScape title"],
+  ["vndb", "VNDB title"],
+  ["alt", "VNDB alternate title"],
+];
 
 const part = (id) => $(`[data-id="${id}"]`, root);
 
@@ -184,6 +189,7 @@ function languageSection() {
 function generalTab() {
   return [
     ...languageSection(),
+    ...displayTitlePrioritySection(),
     ...coversSection(),
     ...vndbSection(),
     ...screenshotsSection(),
@@ -192,6 +198,61 @@ function generalTab() {
     ...appSection(),
     ...dataSection(),
   ];
+}
+
+function displayTitlePrioritySection() {
+  const priority = normalizeDisplayTitlePriority(store.settings.display_title_priority);
+  const move = (index, offset) => {
+    const next = [...priority];
+    [next[index], next[index + offset]] = [next[index + offset], next[index]];
+    save({ display_title_priority: next });
+  };
+
+  return [
+    section(t("Display title priority")),
+    hint(t("The first available title in this order is displayed.")),
+    ...priority.map((source, index) => {
+      const label = DISPLAY_TITLE_SOURCES.find(([value]) => value === source)[1];
+      return el(
+        "div",
+        { class: "row", style: { justifyContent: "space-between" } },
+        el("span", {}, `${index + 1}. ${t(label)}`),
+        el(
+          "div",
+          { class: "row" },
+          el(
+            "button",
+            {
+              class: "btn secondary small",
+              type: "button",
+              disabled: index === 0,
+              "aria-label": t("Move up"),
+              title: t("Move up"),
+              onclick: () => move(index, -1),
+            },
+            "↑",
+          ),
+          el(
+            "button",
+            {
+              class: "btn secondary small",
+              type: "button",
+              disabled: index === priority.length - 1,
+              "aria-label": t("Move down"),
+              title: t("Move down"),
+              onclick: () => move(index, 1),
+            },
+            "↓",
+          ),
+        ),
+      );
+    }),
+  ];
+}
+
+function normalizeDisplayTitlePriority(value) {
+  const priority = Array.isArray(value) ? value.filter((source) => DISPLAY_TITLE_SOURCES.some(([id]) => id === source)) : [];
+  return [...new Set([...priority, ...DISPLAY_TITLE_SOURCES.map(([id]) => id)])];
 }
 
 function advancedTab() {

@@ -7,6 +7,7 @@ use serde_json::{json, Map, Value};
 pub type Entry = Map<String, Value>;
 
 pub const STATUSES: [&str; 4] = ["playing", "finished", "stalled", "dropped"];
+pub const DISPLAY_TITLE_PRIORITY_DEFAULT: [&str; 3] = ["erogamescape", "vndb", "alt"];
 
 fn defaults() -> Map<String, Value> {
     let v = json!({
@@ -51,6 +52,7 @@ fn defaults() -> Map<String, Value> {
         "default_asset_key": "vn_cover",
         "show_vndb_button": true,
         "show_erogamescape_button": true,
+        "display_title_priority": DISPLAY_TITLE_PRIORITY_DEFAULT,
         "title_rules": [],
         "blacklist_exe": ["osu!.exe", "Medal.exe", "Riot Client.exe"],
         "check_updates": true,
@@ -453,6 +455,25 @@ impl Config {
 
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.data.get(key)
+    }
+
+    pub fn display_title_priority(&self) -> Vec<String> {
+        let mut priority = Vec::new();
+        if let Some(values) = self.get("display_title_priority").and_then(Value::as_array) {
+            for value in values.iter().filter_map(Value::as_str) {
+                if DISPLAY_TITLE_PRIORITY_DEFAULT.contains(&value)
+                    && !priority.iter().any(|current| current == value)
+                {
+                    priority.push(value.to_string());
+                }
+            }
+        }
+        for value in DISPLAY_TITLE_PRIORITY_DEFAULT {
+            if !priority.iter().any(|current| current == value) {
+                priority.push(value.to_string());
+            }
+        }
+        priority
     }
 
     pub fn str(&self, key: &str) -> String {
@@ -913,6 +934,29 @@ mod tests {
         cfg.remove_game_field("test", "erogamescape_id");
         let saved = fs::read_to_string(cfg.games_dir().join("test.yaml")).unwrap();
         assert!(!saved.contains("erogamescape_id"));
+    }
+
+    #[test]
+    fn display_title_priority_keeps_configured_order_and_restores_missing_sources() {
+        let mut cfg = library("display-title-priority");
+        cfg.update(
+            [(
+                "display_title_priority".to_string(),
+                json!(["alt", "alt", "unknown"]),
+            )]
+            .into_iter()
+            .collect(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.display_title_priority(),
+            vec![
+                "alt".to_string(),
+                "erogamescape".to_string(),
+                "vndb".to_string()
+            ]
+        );
     }
 
     #[test]

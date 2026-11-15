@@ -61,6 +61,7 @@ fn cover_of(cfg: &Config, entry: &Entry) -> Option<String> {
 #[tauri::command(async)]
 pub fn get_library(shared: SharedState) -> Vec<Value> {
     let cfg = shared.config.lock().unwrap();
+    let title_priority = cfg.display_title_priority();
 
     visible_games(&cfg)
         .into_iter()
@@ -72,7 +73,7 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
 
             json!({
                 "key": key,
-                "name": screenshots::display_name(&key, &entry),
+                "name": screenshots::display_name(&key, &entry, &title_priority),
                 "status": text(&entry, "status"),
                 "playtime": entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0),
                 "daily": entry.get("daily").cloned().unwrap_or(json!({})),
@@ -137,6 +138,7 @@ pub async fn fill_release_dates(shared: SharedState<'_>) -> Result<usize, String
 #[tauri::command(async)]
 pub fn get_game(shared: SharedState, key: String) -> Value {
     let mut cfg = shared.config.lock().unwrap();
+    let title_priority = cfg.display_title_priority();
     let entry = cfg.game(&key);
 
     let folder = screenshots::folder_for(&mut cfg, &key, false);
@@ -150,7 +152,7 @@ pub fn get_game(shared: SharedState, key: String) -> Value {
             let other_entry = cfg.game(&other);
             json!({
                 "key": other,
-                "name": screenshots::display_name(&other, &other_entry),
+                "name": screenshots::display_name(&other, &other_entry, &title_priority),
                 "playtime": other_entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0),
             })
         })
@@ -158,7 +160,7 @@ pub fn get_game(shared: SharedState, key: String) -> Value {
 
     json!({
         "key": key,
-        "name": screenshots::display_name(&key, &entry),
+        "name": screenshots::display_name(&key, &entry, &title_priority),
         "entry": entry,
         "cover": cover_of(&cfg, &entry),
         "shots": shots.iter().take(5).map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>(),
@@ -426,8 +428,10 @@ pub fn set_tool_path(shared: SharedState, launcher: String, path: String) -> Res
 
 #[tauri::command(async)]
 pub fn create_shortcut(shared: SharedState, key: String) -> Result<String, LaunchError> {
-    let entry = shared.config.lock().unwrap().game(&key);
-    let name = screenshots::display_name(&key, &entry);
+    let cfg = shared.config.lock().unwrap();
+    let entry = cfg.game(&key);
+    let name = screenshots::display_name(&key, &entry, &cfg.display_title_priority());
+    drop(cfg);
     let app_exe = std::env::current_exe().map_err(|e| LaunchError::Failed(e.to_string()))?;
     let game_exe = PathBuf::from(launcher::launch_exe(&entry));
     if !game_exe.is_file() {

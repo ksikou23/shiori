@@ -17,13 +17,14 @@ const WRAPPED_SITE: &str = "https://shiori.maia.moe/wrapped";
 #[tauri::command(async)]
 pub fn share_games(shared: SharedState) -> Vec<Value> {
     let cfg = shared.config.lock().unwrap();
+    let title_priority = cfg.display_title_priority();
 
     visible_games(&cfg)
         .into_iter()
         .map(|(key, entry)| {
             json!({
                 "key": key,
-                "name": screenshots::display_name(&key, &entry),
+                "name": screenshots::display_name(&key, &entry, &title_priority),
                 "daily": entry.get("daily").cloned().unwrap_or(json!({})),
                 "status": entry.get("status").cloned().unwrap_or(json!("")),
                 "finished_at": entry.get("finished_at").cloned().unwrap_or(Value::Null),
@@ -146,6 +147,7 @@ fn finished_in(entry: &Entry, year: i32) -> bool {
 pub fn build_recap(
     year: i32,
     games: &[(String, Entry)],
+    title_priority: &[String],
     shot_times: &[u64],
     lang: &str,
     nsfw: bool,
@@ -191,7 +193,10 @@ pub fn build_recap(
         if seconds < 60 {
             continue;
         }
-        let title: String = screenshots::display_name(key, entry).chars().take(60).collect();
+        let title: String = screenshots::display_name(key, entry, title_priority)
+            .chars()
+            .take(60)
+            .collect();
         let mut vn = json!({ "t": title, "s": seconds });
         if let Some(id) = ["vndb_id", "matched_vndb_id"]
             .iter()
@@ -275,7 +280,14 @@ fn recap_of(shared: &Shared, year: i32) -> Value {
         .flat_map(|game| game.times)
         .collect();
     let lang = crate::lang::resolve(&cfg.str("language"));
-    build_recap(year, &games, &shots, lang, cfg.bool("allow_nsfw_covers"))
+    build_recap(
+        year,
+        &games,
+        &cfg.display_title_priority(),
+        &shots,
+        lang,
+        cfg.bool("allow_nsfw_covers"),
+    )
 }
 
 #[tauri::command(async)]
@@ -423,7 +435,10 @@ mod tests {
             ("c.exe".to_string(), game(json!({ "name": "Old", "daily": { "2025-01-01": 9000 } }))),
         ];
 
-        let recap = build_recap(2026, &games, &[], "fr", false);
+        let priority = crate::config::DISPLAY_TITLE_PRIORITY_DEFAULT
+            .map(str::to_string)
+            .to_vec();
+        let recap = build_recap(2026, &games, &priority, &[], "fr", false);
 
         assert_eq!(recap["t"], 13200);
         assert_eq!(recap["n"], 2);

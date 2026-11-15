@@ -10,11 +10,12 @@ use tauri::Manager;
 use crate::config::{game_key, url_cache_key, Config};
 use crate::discord::{self, Activity};
 use crate::emulators;
-use crate::lang;
-use crate::presence;
 use crate::engines::{
     blacklist_set, clean_title, detect_engine, is_helper_exe, is_windows_app, normalize_exe,
 };
+use crate::lang;
+use crate::presence;
+use crate::screenshots;
 use crate::state::{Cmd, Cover, Shared, Snapshot};
 use crate::steam;
 use crate::title_parser::{parse, user_rules};
@@ -444,7 +445,7 @@ impl Engine {
             self.start_session(&key);
         }
 
-        let (mut entry, use_steam, nsfw_ok, asset) = {
+        let (mut entry, use_steam, nsfw_ok, asset, title_priority) = {
             let mut cfg = self.shared.config.lock().unwrap();
             if !target.exe_path.is_empty() && text(&cfg.game(&key), "path") != target.exe_path {
                 cfg.set_game(
@@ -457,6 +458,7 @@ impl Engine {
                 cfg.bool("use_steam_names"),
                 cfg.bool("allow_nsfw_covers"),
                 cfg.str("default_asset_key"),
+                cfg.display_title_priority(),
             )
         };
 
@@ -523,8 +525,13 @@ impl Engine {
             vndb_list::sync_status(&self.shared, &key, &vn_id, &status, true);
         }
 
-        let mut other_names = vn.as_ref().map(|v| v.other_titles.clone()).unwrap_or_default();
+        let mut other_names = vn
+            .as_ref()
+            .map(|v| v.other_titles.clone())
+            .unwrap_or_default();
         other_names.push(steam_name);
+        other_names.push(text(&entry, "erogamescape_name"));
+        other_names.push(text(&entry, "vndb_alttitle"));
         let mut info = parse(&cleaned, &game_name, &other_names, &rules);
         let manual_section = text(&entry, "section");
         if info.section_label.is_empty() && !manual_section.trim().is_empty() {
@@ -537,8 +544,15 @@ impl Engine {
         let needs_check = vn_id.is_empty()
             && !entry.get("match_checked").and_then(Value::as_bool).unwrap_or(false)
             && playtime < 600;
+        let preferred_title = screenshots::display_name_with_vn_titles(
+            &key,
+            &entry,
+            &title_priority,
+            vn.as_ref().map(|vn| vn.title.as_str()),
+            vn.as_ref().map(|vn| vn.alt_title.as_str()),
+        );
         if needs_check && self.announced.insert(key.clone()) {
-            self.announce_new_vn(&game_name, cover.local_path.clone());
+            self.announce_new_vn(&preferred_title, cover.local_path.clone());
         }
 
         self.store(Snapshot {
@@ -550,7 +564,7 @@ impl Engine {
                 .map_or(target.engine, |game| game.emulator.clone()),
             emulator: emulated.map(|game| game.emulator).unwrap_or_default(),
             raw_title: target.title,
-            game_name,
+            game_name: preferred_title,
             section_type: info.section_type,
             section_label: info.section_label,
             cover,
@@ -935,6 +949,9 @@ fn learned_fields(
         learned.insert("name".into(), json!(game_name));
     }
     if let Some(vn) = vn {
+        if !vn.title.trim().is_empty() && text(entry, "vndb_title") != vn.title {
+            learned.insert("vndb_title".into(), json!(vn.title));
+        }
         if text(entry, "vndb_id").is_empty() && text(entry, "matched_vndb_id") != vn.id {
             learned.insert("matched_vndb_id".into(), json!(vn.id));
         }
@@ -963,11 +980,13 @@ mod tests {
     fn learned_vndb_alttitle_is_saved_under_its_yaml_key() {
         let vn = VnResult {
             id: "v1".into(),
+            title: "Title".into(),
             alt_title: "Alternate title".into(),
             ..Default::default()
         };
         let learned = learned_fields(&Map::new(), "", Some(&vn), &Cover::default());
 
+        assert_eq!(learned.get("vndb_title"), Some(&Value::from("Title")));
         assert_eq!(
             learned.get("vndb_alttitle"),
             Some(&Value::from("Alternate title"))

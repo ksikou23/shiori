@@ -10,11 +10,12 @@ use crate::{clipboard, images, shell};
 pub fn list_screenshots(shared: SharedState, key: Option<String>) -> Value {
     let mut cfg = shared.config.lock().unwrap();
     let games = screenshots::games_with_shots(&mut cfg);
+    let title_priority = cfg.display_title_priority();
 
     let extra_name = key
         .as_ref()
         .filter(|k| !games.iter().any(|g| &g.key == *k))
-        .map(|k| screenshots::display_name(k, &cfg.game(k)));
+        .map(|k| screenshots::display_name(k, &cfg.game(k), &title_priority));
 
     json!({
         "games": games,

@@ -173,10 +173,11 @@ pub struct GameShots {
 }
 
 pub fn games_with_shots(cfg: &mut Config) -> Vec<GameShots> {
+    let priority = cfg.display_title_priority();
     let games: Vec<(String, String)> = cfg
         .all_games()
         .iter()
-        .map(|(key, e)| (key.clone(), display_name(key, e)))
+        .map(|(key, e)| (key.clone(), display_name(key, e, &priority)))
         .collect();
 
     let mut out = Vec::new();
@@ -203,7 +204,41 @@ pub fn games_with_shots(cfg: &mut Config) -> Vec<GameShots> {
     out
 }
 
-pub fn display_name(key: &str, entry: &Map<String, Value>) -> String {
+pub fn display_name(key: &str, entry: &Map<String, Value>, priority: &[String]) -> String {
+    display_name_with_vn_titles(key, entry, priority, None, None)
+}
+
+pub fn display_name_with_vn_titles(
+    key: &str,
+    entry: &Map<String, Value>,
+    priority: &[String],
+    vndb_title: Option<&str>,
+    vndb_alt_title: Option<&str>,
+) -> String {
+    let preferred = priority.iter().find_map(|source| {
+        let value = match source.as_str() {
+            "erogamescape" => text(entry, "erogamescape_name"),
+            "vndb" => vndb_title
+                .filter(|title| !title.trim().is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    [text(entry, "vndb_title"), text(entry, "title")]
+                        .into_iter()
+                        .find(|title| !title.trim().is_empty())
+                })
+                .unwrap_or_default(),
+            "alt" => vndb_alt_title
+                .filter(|title| !title.trim().is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| text(entry, "vndb_alttitle")),
+            _ => String::new(),
+        };
+        (!value.trim().is_empty()).then_some(value)
+    });
+
+    if let Some(preferred) = preferred {
+        return preferred;
+    }
     [text(entry, "title"), text(entry, "name")]
         .into_iter()
         .find(|t| !t.is_empty())
@@ -387,5 +422,55 @@ mod tests {
             "Amatsutsumi (2)"
         );
         assert_eq!(folder_name("Dots...", &[]), "Dots");
+    }
+
+    #[test]
+    fn display_name_uses_the_configured_title_source_order() {
+        let entry = Map::from_iter([
+            ("erogamescape_name".into(), json!("ErogameScape")),
+            ("title".into(), json!("VNDB")),
+            ("vndb_alttitle".into(), json!("Alternate")),
+        ]);
+        let priority = vec!["alt".into(), "erogamescape".into(), "vndb".into()];
+        assert_eq!(display_name("game.exe", &entry, &priority), "Alternate");
+
+        let priority = vec!["erogamescape".into(), "vndb".into(), "alt".into()];
+        assert_eq!(display_name("game.exe", &entry, &priority), "ErogameScape");
+    }
+
+    #[test]
+    fn display_name_uses_live_vndb_titles_in_configured_order() {
+        let entry = Map::from_iter([("erogamescape_name".into(), json!("ErogameScape"))]);
+        let priority = vec!["alt".into(), "vndb".into(), "erogamescape".into()];
+        assert_eq!(
+            display_name_with_vn_titles(
+                "game.exe",
+                &entry,
+                &priority,
+                Some("VNDB title"),
+                Some("Alternate title")
+            ),
+            "Alternate title"
+        );
+
+        let priority = vec!["vndb".into(), "alt".into(), "erogamescape".into()];
+        assert_eq!(
+            display_name_with_vn_titles(
+                "game.exe",
+                &entry,
+                &priority,
+                Some("VNDB title"),
+                Some("Alternate title")
+            ),
+            "VNDB title"
+        );
+    }
+
+    #[test]
+    fn display_name_falls_back_when_preferred_titles_are_missing() {
+        let entry = Map::from_iter([("name".into(), json!("Detected name"))]);
+        let priority = vec!["erogamescape".into(), "vndb".into(), "alt".into()];
+        assert_eq!(display_name("game.exe", &entry, &priority), "Detected name");
+        assert_eq!(display_name("game.exe", &Map::new(), &priority), "game.exe");
     }
 }
