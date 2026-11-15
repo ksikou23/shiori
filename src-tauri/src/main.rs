@@ -216,6 +216,7 @@ fn main() {
             commands::app::play_shutter,
             commands::app::quit,
             commands::library::get_library,
+            commands::library::get_library_brands,
             commands::library::get_game,
             commands::library::search_erogamescape,
             commands::library::confirm_erogamescape,

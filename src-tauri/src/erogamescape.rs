@@ -49,21 +49,20 @@ pub struct GameDetails {
     pub erogamescape_brand_id: u64,
 }
 
+#[derive(Clone, Debug, serde::Deserialize, Serialize)]
+pub struct BrandDetails {
+    pub id: u64,
+    pub name: String,
+    pub furigana: String,
+}
+
 pub fn search(query: &str) -> Result<Vec<GameResult>, String> {
     let query = query.trim();
     if query.is_empty() {
         return Ok(Vec::new());
     }
 
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(concat!(
-            "ShioriRPC/",
-            env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/ksikou23/shiori)"
-        ))
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = http_client()?;
     let mut url = reqwest::Url::parse(SEARCH_URL).map_err(|error| error.to_string())?;
     url.query_pairs_mut()
         .append_pair("mode", "normal")
@@ -86,15 +85,7 @@ pub fn fetch_details(id: u64) -> Result<GameDetails, String> {
         return Err("ErogameScape ID must be greater than zero".into());
     }
 
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(concat!(
-            "ShioriRPC/",
-            env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/ksikou23/shiori)"
-        ))
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = http_client()?;
     let game_page = fetch_page(
         &client,
         &format!("https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game={id}"),
@@ -107,6 +98,34 @@ pub fn fetch_details(id: u64) -> Result<GameDetails, String> {
     )?;
 
     parse_details(id, &game_page, &mod_page)
+}
+
+pub fn fetch_brand_details(id: u64) -> Result<BrandDetails, String> {
+    if id == 0 {
+        return Err("ErogameScape brand ID must be greater than zero".into());
+    }
+
+    let client = http_client()?;
+    let page = fetch_page(
+        &client,
+        &format!(
+            "https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/mod_brand.php?brand={id}"
+        ),
+        "brand information",
+    )?;
+    parse_brand_details(id, &page)
+}
+
+fn http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .user_agent(concat!(
+            "ShioriRPC/",
+            env!("CARGO_PKG_VERSION"),
+            " (+https://github.com/ksikou23/shiori)"
+        ))
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| error.to_string())
 }
 
 fn fetch_page(client: &reqwest::blocking::Client, url: &str, page: &str) -> Result<String, String> {
@@ -155,6 +174,25 @@ fn parse_details(id: u64, game_page: &str, mod_page: &str) -> Result<GameDetails
         erogamescape_name: clean_text(&name),
         erogamescape_furigana: clean_text(&furigana),
         erogamescape_brand_id: brand_id,
+    })
+}
+
+fn parse_brand_details(id: u64, page: &str) -> Result<BrandDetails, String> {
+    let page_id = input_value(page, "brand")
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or_else(|| "couldn't find the brand ID on ErogameScape's brand page".to_string())?;
+    if page_id != id {
+        return Err("ErogameScape returned information for a different brand ID".into());
+    }
+
+    let name = input_value(page, "brandname")
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "couldn't find the brand name on ErogameScape's brand page".to_string())?;
+    let furigana = input_value(page, "brandfurigana").unwrap_or_default();
+    Ok(BrandDetails {
+        id,
+        name: clean_text(&name),
+        furigana: clean_text(&furigana),
     })
 }
 
@@ -257,7 +295,7 @@ fn decode_entities(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_details, parse_results};
+    use super::{parse_brand_details, parse_details, parse_results};
 
     #[test]
     fn parses_game_results_with_disambiguating_details() {
@@ -308,6 +346,28 @@ mod tests {
         assert_eq!(details.erogamescape_name, "はつゆきさくら");
         assert_eq!(details.erogamescape_furigana, "ハツユキサクラ");
         assert_eq!(details.erogamescape_brand_id, 114);
+    }
+
+    #[test]
+    fn parses_requested_brand_details() {
+        let page = r#"
+            <input name="brand" value="1171">
+            <input name="brandname" value="枕">
+            <input name="brandfurigana" value="マクラ">
+        "#;
+        let brand = parse_brand_details(1171, page).unwrap();
+        assert_eq!(brand.id, 1171);
+        assert_eq!(brand.name, "枕");
+        assert_eq!(brand.furigana, "マクラ");
+    }
+
+    #[test]
+    fn refuses_brand_details_for_a_different_id() {
+        let page = r#"
+            <input name="brand" value="1171">
+            <input name="brandname" value="枕">
+        "#;
+        assert!(parse_brand_details(1000, page).is_err());
     }
 
     #[test]

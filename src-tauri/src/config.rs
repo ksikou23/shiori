@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
+use crate::erogamescape::BrandDetails;
+
 pub type Entry = Map<String, Value>;
 
 pub const STATUSES: [&str; 4] = ["playing", "finished", "stalled", "dropped"];
@@ -23,8 +25,11 @@ fn defaults() -> Map<String, Value> {
         "title_language": "romanized",
         "presence_language": "app",
         "library_view": "list",
+        "library_group_by_brand": false,
         "library_sort": "most",
         "library_sort_reverse": false,
+        "library_brand_sort": "most",
+        "library_brand_sort_reverse": false,
         "screenshots_view": "right",
         "screenshots_order": "game",
         "background_image": "",
@@ -298,6 +303,7 @@ pub struct Config {
     pub dir: PathBuf,
     data: Map<String, Value>,
     games: BTreeMap<String, Entry>,
+    brands: BTreeMap<u64, BrandDetails>,
     filenames: HashMap<String, String>,
     frac: HashMap<String, f64>,
 }
@@ -305,6 +311,33 @@ pub struct Config {
 impl Config {
     pub fn games_dir(&self) -> PathBuf {
         self.dir.join("games")
+    }
+
+    pub fn brands_dir(&self) -> PathBuf {
+        self.dir.join("brand")
+    }
+
+    pub fn brand(&self, id: u64) -> Option<&BrandDetails> {
+        self.brands.get(&id)
+    }
+
+    pub fn set_brand(&mut self, brand: BrandDetails) -> std::io::Result<()> {
+        if brand.id == 0 || brand.name.trim().is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "brand ID and name must not be empty",
+            ));
+        }
+        let mut fields = Map::new();
+        fields.insert("id".into(), json!(brand.id));
+        fields.insert("name".into(), json!(brand.name));
+        fields.insert("furigana".into(), json!(brand.furigana));
+        write_yaml(
+            &self.brands_dir().join(format!("{}.yaml", brand.id)),
+            &fields,
+        )?;
+        self.brands.insert(brand.id, brand);
+        Ok(())
     }
 
     pub fn covers_dir(&self) -> PathBuf {
@@ -318,6 +351,7 @@ impl Config {
         let _ = fs::create_dir_all(dir);
         let _ = fs::copy(source.join("config.yaml"), dir.join("config.yaml"));
         let _ = copy_dir(&source.join("games"), &dir.join("games"));
+        let _ = copy_dir(&source.join("brand"), &dir.join("brand"));
         let _ = copy_dir(
             &source.join("cache").join("covers"),
             &dir.join("cache").join("covers"),
@@ -384,6 +418,7 @@ impl Config {
 
     pub fn load(dir: &Path) -> Config {
         let _ = fs::create_dir_all(dir.join("games"));
+        let _ = fs::create_dir_all(dir.join("brand"));
         let _ = fs::create_dir_all(dir.join("cache").join("covers"));
         let _ = fs::create_dir_all(dir.join("cache").join("vndb"));
         let mut data = defaults();
@@ -404,6 +439,42 @@ impl Config {
             }
         }
         let mut games = BTreeMap::new();
+        let mut brands = BTreeMap::new();
+        for path in fs::read_dir(dir.join("brand"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+        {
+            if path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+                continue;
+            }
+            let Some(fields) = read_yaml(&path) else {
+                continue;
+            };
+            let Some(id) = fields.get("id").and_then(Value::as_u64) else {
+                continue;
+            };
+            let name = fields
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if id > 0 && !name.trim().is_empty() {
+                brands.insert(
+                    id,
+                    BrandDetails {
+                        id,
+                        name,
+                        furigana: fields
+                            .get("furigana")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                    },
+                );
+            }
+        }
         let mut filenames = HashMap::new();
         let mut paths: Vec<_> = fs::read_dir(dir.join("games"))
             .into_iter()
@@ -435,6 +506,7 @@ impl Config {
             dir: dir.to_path_buf(),
             data,
             games,
+            brands,
             filenames,
             frac: HashMap::new(),
         };
@@ -638,7 +710,6 @@ impl Config {
                 fs::remove_file(entry.path())?;
             }
         }
-
         self.data = defaults();
         self.data.extend(data);
         self.save()?;
@@ -937,6 +1008,51 @@ mod tests {
     }
 
     #[test]
+    fn brand_details_are_saved_separately_from_games() {
+        let mut cfg = library("brand-details-separate");
+        add(&mut cfg, "test", json!({ "erogamescape_brand_id": 1171 }));
+        cfg.set_brand(BrandDetails {
+            id: 1171,
+            name: "枕".into(),
+            furigana: "マクラ".into(),
+        })
+        .unwrap();
+
+        let game_yaml = fs::read_to_string(cfg.games_dir().join("test.yaml")).unwrap();
+        let brand_yaml = fs::read_to_string(cfg.brands_dir().join("1171.yaml")).unwrap();
+        assert!(game_yaml.contains("erogamescape_brand_id: 1171"));
+        assert!(!game_yaml.contains("マクラ"));
+        assert!(brand_yaml.contains("name: 枕"));
+        assert!(brand_yaml.contains("furigana: マクラ"));
+
+        let reloaded = Config::load(&cfg.dir);
+        assert_eq!(reloaded.brand(1171).unwrap().name, "枕");
+    }
+
+    #[test]
+    fn brand_details_are_copied_when_importing_a_legacy_profile() {
+        let root = std::env::temp_dir().join(format!("vnrpc-test-brand-import-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let (source, dest) = (root.join("old"), root.join("new"));
+        fs::create_dir_all(source.join("games")).unwrap();
+        fs::create_dir_all(source.join("brand")).unwrap();
+        write_yaml(&source.join("config.yaml"), &Map::new()).unwrap();
+        write_yaml(
+            &source.join("brand").join("1171.yaml"),
+            &json!({ "id": 1171, "name": "枕", "furigana": "マクラ" })
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+
+        assert!(Config::import_from(&dest, &source));
+        let reloaded = Config::load(&dest);
+        assert_eq!(reloaded.brand(1171).unwrap().furigana, "マクラ");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn display_title_priority_keeps_configured_order_and_restores_missing_sources() {
         let mut cfg = library("display-title-priority");
         cfg.update(
@@ -1047,6 +1163,7 @@ mod tests {
         let (old, new) = (root.join("old"), root.join("new"));
         let inside = |path: &str| old.join(path).to_string_lossy().to_string();
         fs::create_dir_all(old.join("games")).unwrap();
+        fs::create_dir_all(old.join("brand")).unwrap();
         fs::create_dir_all(old.join("backgrounds")).unwrap();
         fs::write(old.join("backgrounds").join("bg.png"), "picture").unwrap();
         fs::write(old.join("crash.log"), "old crash").unwrap();
@@ -1058,6 +1175,12 @@ mod tests {
         write_yaml(&old.join("config.yaml"), settings.as_object().unwrap()).unwrap();
         let game = json!({ "title": "Eustia", "cover_value": inside("covers/a.png") });
         write_yaml(&old.join("games").join("Eustia.yaml"), game.as_object().unwrap()).unwrap();
+        let brand = json!({ "id": 1171, "name": "枕", "furigana": "マクラ" });
+        write_yaml(
+            &old.join("brand").join("1171.yaml"),
+            brand.as_object().unwrap(),
+        )
+        .unwrap();
 
         assert!(Config::migrate_from(&new, &old));
 
@@ -1069,6 +1192,7 @@ mod tests {
         let game = read_yaml(&new.join("games").join("Eustia.yaml")).unwrap();
         assert_eq!(game["cover_value"], json!(moved("covers/a.png")));
         assert!(new.join("backgrounds").join("bg.png").exists());
+        assert!(new.join("brand").join("1171.yaml").exists());
         assert!(!new.join("crash.log").exists());
         assert!(old.join("config.yaml").exists());
         assert!(!Config::migrate_from(&new, &old));

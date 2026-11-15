@@ -5,6 +5,7 @@ use serde_json::{json, Map, Value};
 
 use super::{blocking, SharedState};
 use crate::config::{Config, Entry, STATUSES};
+use crate::erogamescape::BrandDetails;
 use crate::engines::{blacklist_set, is_windows_app, normalize_exe};
 use crate::launcher::{self, LaunchError};
 use crate::screenshots;
@@ -193,6 +194,21 @@ fn cover_of(cfg: &Config, entry: &Entry) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+fn ensure_brand_info(shared: &Shared, id: u64) -> Result<BrandDetails, String> {
+    if let Some(brand) = shared.config.lock().unwrap().brand(id).cloned() {
+        return Ok(brand);
+    }
+
+    let brand = crate::erogamescape::fetch_brand_details(id)?;
+    let mut cfg = shared.config.lock().unwrap();
+    if let Some(cached) = cfg.brand(id) {
+        return Ok(cached.clone());
+    }
+    cfg.set_brand(brand.clone())
+        .map_err(|error| format!("couldn't save brand {}: {error}", brand.id))?;
+    Ok(brand)
+}
+
 #[tauri::command(async)]
 pub fn get_library(shared: SharedState) -> Vec<Value> {
     let (title_priority, games) = {
@@ -228,6 +244,7 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
                 "key": key,
                 "name": screenshots::display_name(&key, &entry, &title_priority),
                 "furigana": text(&entry, "erogamescape_furigana"),
+                "brand_id": entry.get("erogamescape_brand_id").and_then(Value::as_u64),
                 "search_names": search_names,
                 "status": text(&entry, "status"),
                 "playtime": entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0),
@@ -244,6 +261,61 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
             })
         })
         .collect()
+}
+
+#[tauri::command]
+pub async fn get_library_brands(shared: SharedState<'_>) -> Result<Vec<BrandDetails>, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || {
+        let mut ids = {
+            let cfg = shared.config.lock().unwrap();
+            visible_games(&cfg)
+                .iter()
+                .filter_map(|(_, entry)| {
+                    entry
+                        .get("erogamescape_brand_id")
+                        .and_then(Value::as_u64)
+                        .filter(|id| *id > 0)
+                })
+                .collect::<Vec<_>>()
+        };
+        ids.sort_unstable();
+        ids.dedup();
+
+        let mut brands = Vec::with_capacity(ids.len());
+        let mut errors = Vec::new();
+        for id in ids {
+            match ensure_brand_info(&shared, id) {
+                Ok(brand) => brands.push(brand),
+                Err(error) => {
+                    errors.push(error);
+                    brands.push(BrandDetails {
+                        id,
+                        name: String::new(),
+                        furigana: String::new(),
+                    });
+                }
+            }
+        }
+
+        if !errors.is_empty() {
+            shared.emit(
+                "toast",
+                json!({
+                    "title": format!(
+                        "Couldn't load {} brand details; showing brand IDs instead.",
+                        errors.len()
+                    ),
+                    "ok": false,
+                }),
+            );
+            for error in errors {
+                eprintln!("{error}");
+            }
+        }
+        Ok(brands)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -344,6 +416,7 @@ pub async fn confirm_erogamescape(
     let shared = Arc::clone(&shared);
     blocking(move || {
         let details = crate::erogamescape::fetch_details(id)?;
+        let brand_error = ensure_brand_info(&shared, details.erogamescape_brand_id).err();
         let mut fields = Map::new();
         fields.insert("erogamescape_id".into(), json!(details.erogamescape_id));
         fields.insert(
@@ -362,6 +435,15 @@ pub async fn confirm_erogamescape(
         cfg.set_game(&key, fields);
         drop(cfg);
 
+        if let Some(error) = brand_error {
+            shared.emit(
+                "toast",
+                json!({
+                    "title": format!("Couldn't save ErogameScape brand information: {error}"),
+                    "ok": false,
+                }),
+            );
+        }
         changed(&shared, &key);
         Ok(details)
     })

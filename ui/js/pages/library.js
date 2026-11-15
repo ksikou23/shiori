@@ -11,14 +11,17 @@ import {
 } from "../format.js";
 import { register, show } from "../router.js";
 import { store, subscribe } from "../store.js";
-import { call, confirmButton, segmented, setCover, toast } from "../ui.js";
+import { call, confirmButton, segmented, setCover, toast, toggle } from "../ui.js";
 import { playGame } from "../components/play.js";
 import { drawHeatmap } from "../components/heatmap.js";
 import { t } from "../i18n.js";
 
 const TEMPLATE = `
   <div class="page-head lib-head">
-    <h2>Library</h2>
+    <div class="lib-title">
+      <h2>Library</h2>
+      <div data-id="brand-toggle"></div>
+    </div>
     <div class="row">
       <div class="view-menu" data-id="view-menu">
         <button class="btn secondary" data-id="view-button" aria-haspopup="menu">
@@ -33,6 +36,21 @@ const TEMPLATE = `
         </div>
       </div>
       <input type="search" data-id="filter" placeholder="Filter…" />
+    </div>
+  </div>
+
+  <div class="page-head lib-tools brand-tools" data-id="brand-tools" hidden>
+    <div class="seg sort-bar">
+      <span class="sort-label">Sort brands</span>
+      <div class="sort-options" data-id="brand-sort">
+        <button data-v="most">Most read</button>
+        <button data-v="recent">Recent</button>
+        <button data-v="az">A–Z</button>
+        <button data-v="furigana">Furigana</button>
+        <button data-v="release">Release date</button>
+      </div>
+      <span class="sort-sep"></span>
+      <button class="sort-dir" data-id="brand-reverse" title="Reverse order"></button>
     </div>
   </div>
 
@@ -84,6 +102,7 @@ const SORTERS = {
 };
 
 const yearOf = (game) => (/^\d{4}/.test(game.released) ? game.released.slice(0, 4) : "");
+const UNKNOWN_BRAND_ID = "unknown";
 
 const SHELVES = [
   ["playing", "Reading"],
@@ -103,6 +122,9 @@ const VIEWS = {
 
 let root;
 let games = [];
+let brands = [];
+let selectedBrandId = null;
+let brandsAsked = false;
 let datesAsked = false;
 
 const part = (id) => $(`[data-id="${id}"]`, root);
@@ -111,6 +133,7 @@ function build(container) {
   root = container;
   root.append(html(TEMPLATE));
   part("sort").querySelector('[data-v="furigana"]').textContent = t("Furigana");
+  part("brand-sort").querySelector('[data-v="furigana"]').textContent = t("Furigana");
 
   part("filter").oninput = render;
   part("status").onchange = render;
@@ -120,12 +143,26 @@ function build(container) {
     render();
     call("update_settings", { changes: { library_sort_reverse: store.settings.library_sort_reverse } });
   };
+  part("brand-reverse").onclick = () => {
+    store.settings.library_brand_sort_reverse = !store.settings.library_brand_sort_reverse;
+    render();
+    call("update_settings", {
+      changes: { library_brand_sort_reverse: store.settings.library_brand_sort_reverse },
+    });
+  };
 
   part("view-button").onclick = () => (part("view-list").hidden = !part("view-list").hidden);
   for (const item of part("view-list").children) {
     item.onclick = () => {
       part("view-list").hidden = true;
-      call("update_settings", { changes: { library_view: item.dataset.v } });
+      const changes = { library_view: item.dataset.v };
+      if (store.settings.library_view === "brands") {
+        changes.library_group_by_brand = true;
+        store.settings.library_group_by_brand = true;
+      }
+      store.settings.library_view = item.dataset.v;
+      render();
+      call("update_settings", { changes });
     };
   }
   document.addEventListener("click", (event) => {
@@ -150,8 +187,146 @@ function build(container) {
 
 async function load() {
   games = await call("get_library");
+  brandsAsked = false;
   render();
   renderActivity();
+}
+
+function brandView(shown, most, view, brandSort, brandReverse) {
+  const brandById = new Map(brands.map((brand) => [String(brand.id), brand]));
+  const brandFor = (id) => {
+    if (id === UNKNOWN_BRAND_ID) {
+      return { id: UNKNOWN_BRAND_ID, name: t("Unknown brand"), furigana: "" };
+    }
+    const found = brandById.get(String(id));
+    return found?.name
+      ? found
+      : {
+          id: Number(id),
+          name: t("Brand {id}", { id }),
+          furigana: found?.furigana || "",
+        };
+  };
+
+  if (!brandsAsked) {
+    brandsAsked = true;
+    call("get_library_brands")
+      .then((loaded) => {
+        brands = loaded;
+        render();
+      })
+      .catch(() => render());
+  }
+
+  if (selectedBrandId !== null) {
+    const brand = brandFor(selectedBrandId);
+    const brandGames = shown.filter((game) =>
+      selectedBrandId === UNKNOWN_BRAND_ID
+        ? !game.brand_id
+        : String(game.brand_id) === selectedBrandId,
+    );
+    return [
+      el(
+        "div",
+        { class: "brand-detail-head" },
+        el(
+          "button",
+          {
+            class: "btn secondary",
+            onclick: () => {
+              selectedBrandId = null;
+              render();
+            },
+          },
+          t("All brands"),
+        ),
+        el(
+          "div",
+          {},
+          el("b", {}, brand.name),
+        ),
+      ),
+      ...(brandGames.length
+        ? VIEWS[view](brandGames, most)
+        : [el("div", { class: "card lib-empty" }, t("Nothing matches."))]),
+    ];
+  }
+
+  const groups = new Map();
+  for (const game of shown) {
+    const id = game.brand_id ? String(game.brand_id) : UNKNOWN_BRAND_ID;
+    const group = groups.get(id) || {
+      count: 0,
+      playtime: 0,
+      last_played: 0,
+      released: "",
+      games: [],
+    };
+    group.count++;
+    group.playtime += game.playtime;
+    group.last_played = Math.max(group.last_played, game.last_played);
+    if (group.games.length < 3) {
+      group.games.push(game);
+    }
+    if (yearOf(game) && game.released > group.released) {
+      group.released = game.released;
+    }
+    groups.set(id, group);
+  }
+
+  const brandSorters = {
+    most: (a, b) => b.playtime - a.playtime,
+    recent: (a, b) => b.last_played - a.last_played,
+    az: (a, b) => a.brand.name.localeCompare(b.brand.name),
+    furigana: (a, b) =>
+      (a.brand.furigana || a.brand.name).localeCompare(
+        b.brand.furigana || b.brand.name,
+        "ja",
+      ) || a.brand.name.localeCompare(b.brand.name, "ja"),
+    release: (a, b) => b.released.localeCompare(a.released),
+  };
+  const entries = [...groups.entries()].map(([id, stats]) => ({ brand: brandFor(id), ...stats }));
+  const unknown = entries.find(({ brand }) => brand.id === UNKNOWN_BRAND_ID);
+  const ordered = entries
+    .filter(({ brand }) => brand.id !== UNKNOWN_BRAND_ID)
+    .sort(brandSorters[brandSort]);
+  if (brandReverse) {
+    ordered.reverse();
+  }
+  if (brandSort === "release") {
+    ordered.sort((a, b) => Number(!a.released) - Number(!b.released));
+  }
+  if (unknown) {
+    ordered.push(unknown);
+  }
+  if (!ordered.length) {
+    return [el("div", { class: "card lib-empty" }, t("No ErogameScape brands are linked to these games."))];
+  }
+
+  return ordered.map(({ brand, count, games: samples }) =>
+    el(
+      "button",
+      {
+        class: "card brand-group",
+        type: "button",
+        onclick: () => {
+          selectedBrandId = String(brand.id);
+          render();
+        },
+      },
+      el("b", {}, brand.name),
+      el(
+        "div",
+        { class: "brand-thumbnails" },
+        ...samples.map((game) => {
+          const cover = coverOf(game, "brand-thumb-cover");
+          cover.title = game.name;
+          return cover;
+        }),
+      ),
+      el("span", { class: "muted small-text" }, plural(count, "game")),
+    ),
+  );
 }
 
 function readingDays() {
@@ -244,7 +419,39 @@ function render() {
     render();
     call("update_settings", { changes: { library_sort: value } });
   });
+  const legacyBrandView = store.settings.library_view === "brands";
   const view = VIEWS[store.settings.library_view] ? store.settings.library_view : "list";
+  const groupByBrand = store.settings.library_group_by_brand === true || legacyBrandView;
+  const showingBrandGames = groupByBrand && selectedBrandId !== null;
+  const brandSort = SORTERS[store.settings.library_brand_sort]
+    ? store.settings.library_brand_sort
+    : "most";
+  segmented(part("brand-sort"), brandSort, (value) => {
+    store.settings.library_brand_sort = value;
+    render();
+    call("update_settings", { changes: { library_brand_sort: value } });
+  });
+  const brandReverse = !!store.settings.library_brand_sort_reverse;
+  part("brand-reverse").textContent = brandReverse ? "↑" : "↓";
+  part("brand-tools").hidden = !groupByBrand || selectedBrandId !== null;
+  if (!datesAsked && groupByBrand && brandSort === "release" && games.some((game) => game.vndb_id && !game.released)) {
+    datesAsked = true;
+    call("fill_release_dates").catch(() => {});
+  }
+  const brandToggle = toggle(t("Group by brand"), groupByBrand, (enabled) => {
+    const changes = { library_group_by_brand: enabled };
+    store.settings.library_group_by_brand = enabled;
+    selectedBrandId = null;
+    if (legacyBrandView) {
+      changes.library_view = view;
+      store.settings.library_view = view;
+    }
+    render();
+    call("update_settings", { changes });
+  });
+  brandToggle.classList.add("lib-brand-toggle");
+  brandToggle.querySelector("input").setAttribute("aria-label", t("Group by brand"));
+  part("brand-toggle").replaceChildren(brandToggle);
   for (const item of part("view-list").children) {
     item.classList.toggle("on", item.dataset.v === view);
     if (item.dataset.v === view) {
@@ -286,7 +493,7 @@ function render() {
     t("{time} this week", { time: formatPlaytime(week) }),
   ].join("  ·  ");
 
-  if (!shown.length) {
+  if (!shown.length && !showingBrandGames) {
     const message = games.length ? "Nothing matches." : "The VNs you read will show up here.";
     part("list").className = "lib-list";
     part("list").replaceChildren(el("div", { class: "card lib-empty" }, message));
@@ -294,8 +501,12 @@ function render() {
   }
 
   const most = Math.max(1, ...games.map((game) => game.playtime));
-  part("list").className = `lib-list view-${view}`;
-  part("list").replaceChildren(...VIEWS[view](shown, most));
+  part("list").className = `lib-list view-${showingBrandGames ? view : groupByBrand ? "brands" : view}`;
+  part("list").replaceChildren(
+    ...(groupByBrand
+      ? brandView(shown, most, view, brandSort, brandReverse)
+      : VIEWS[view](shown, most)),
+  );
 }
 
 function opener(game) {
@@ -449,6 +660,11 @@ function yearShelves(shown) {
 register({
   id: "library",
   build,
-  show: load,
+  show: (params) => {
+    if (params.resetBrandSelection) {
+      selectedBrandId = null;
+    }
+    return load();
+  },
   onKey: (event) => event.key === "Escape" && (part("view-list").hidden = true),
 });
