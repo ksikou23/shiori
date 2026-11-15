@@ -738,6 +738,16 @@ impl Engine {
                 buttons.push((lang::tr("View on VNDB", language).to_string(), vn.url()));
             }
         }
+        if cfg.bool("show_erogamescape_button") && snap.privacy != "partial" {
+            if let Some(id) = snap.erogamescape_id.filter(|id| *id > 0) {
+                buttons.push((
+                    lang::tr("View on ErogameScape", language).to_string(),
+                    format!(
+                        "https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game={id}"
+                    ),
+                ));
+            }
+        }
 
         let progress = snap
             .vn

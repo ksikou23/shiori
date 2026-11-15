@@ -21,6 +21,7 @@ const VARIABLES = [
   ["year", "Release year"],
   ["engine", "Engine"],
   ["vndb", "VNDB link"],
+  ["erogamescape", "ErogameScape link"],
 ];
 
 const PRESETS = {
@@ -109,8 +110,8 @@ const TEMPLATE = `
 
         <div class="pb-field">
           <span>Buttons (up to 2)</span>
-          <div class="pb-row"><input type="text" data-button="0" data-part="label" placeholder="Label" /><input type="text" data-button="0" data-part="url" placeholder="https://… / {vndb}" spellcheck="false" /></div>
-          <div class="pb-row"><input type="text" data-button="1" data-part="label" placeholder="Label" /><input type="text" data-button="1" data-part="url" placeholder="https://…" spellcheck="false" /></div>
+          <div class="pb-row"><input type="text" data-button="0" data-part="label" placeholder="Label" /><input type="text" data-button="0" data-part="url" placeholder="https://… / {vndb} / {erogamescape}" spellcheck="false" /></div>
+          <div class="pb-row"><input type="text" data-button="1" data-part="label" placeholder="Label" /><input type="text" data-button="1" data-part="url" placeholder="https://… / {vndb} / {erogamescape}" spellcheck="false" /></div>
           <span class="subtle small-text">Discord doesn't show buttons on your own profile, only to others.</span>
         </div>
       </div>

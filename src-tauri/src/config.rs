@@ -50,6 +50,7 @@ fn defaults() -> Map<String, Value> {
         },
         "default_asset_key": "vn_cover",
         "show_vndb_button": true,
+        "show_erogamescape_button": true,
         "title_rules": [],
         "blacklist_exe": ["osu!.exe", "Medal.exe", "Riot Client.exe"],
         "check_updates": true,

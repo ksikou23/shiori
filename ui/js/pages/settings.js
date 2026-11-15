@@ -280,6 +280,7 @@ function presenceSection(custom) {
       ),
       setting("show_elapsed", "Show elapsed time"),
       setting("show_vndb_button", "Add a “View on VNDB” button"),
+      setting("show_erogamescape_button", "Add a “View on ErogameScape” button"),
     ),
     setting("clear_on_close", "Clear presence when the VN closes"),
     setting(
