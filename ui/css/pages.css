@@ -425,6 +425,22 @@
   text-overflow: ellipsis;
 }
 
+.lib-line .line-title {
+  min-width: 0;
+}
+
+.lib-line .brand-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lib-tile .brand-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .lib-line .status {
   font-size: 12px;
 }

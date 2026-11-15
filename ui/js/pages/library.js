@@ -122,7 +122,7 @@ const VIEWS = {
 
 let root;
 let games = [];
-let brands = [];
+let brandById = new Map();
 let selectedBrandId = null;
 let brandsAsked = false;
 let datesAsked = false;
@@ -190,10 +190,36 @@ async function load() {
   brandsAsked = false;
   render();
   renderActivity();
+  requestBrandDetails();
+}
+
+function requestBrandDetails() {
+  if (brandsAsked) {
+    return;
+  }
+  brandsAsked = true;
+  if (!games.some((game) => game.brand_id && !brandById.has(String(game.brand_id)))) {
+    return;
+  }
+  call("get_library_brands")
+    .then((loaded) => {
+      brandById = new Map(loaded.map((brand) => [String(brand.id), brand]));
+      render();
+    })
+    .catch(() => render());
+}
+
+function gameBrandName(game) {
+  if (!game.brand_id) {
+    return t("Unknown brand");
+  }
+  return (
+    brandById.get(String(game.brand_id))?.name ||
+    t("Brand {id}", { id: game.brand_id })
+  );
 }
 
 function brandView(shown, most, view, brandSort, brandReverse) {
-  const brandById = new Map(brands.map((brand) => [String(brand.id), brand]));
   const brandFor = (id) => {
     if (id === UNKNOWN_BRAND_ID) {
       return { id: UNKNOWN_BRAND_ID, name: t("Unknown brand"), furigana: "" };
@@ -208,15 +234,7 @@ function brandView(shown, most, view, brandSort, brandReverse) {
         };
   };
 
-  if (!brandsAsked) {
-    brandsAsked = true;
-    call("get_library_brands")
-      .then((loaded) => {
-        brands = loaded;
-        render();
-      })
-      .catch(() => render());
-  }
+  requestBrandDetails();
 
   if (selectedBrandId !== null) {
     const brand = brandFor(selectedBrandId);
@@ -562,6 +580,7 @@ function row(game, most) {
     { class: "meta" },
     nowBadge(game),
     statusChip(game),
+    el("span", { class: "brand-name" }, gameBrandName(game)),
     el("span", {}, readText(game)),
     game.last_played > 0 && el("span", {}, `·  ${lastPlayed(game.last_played)}`),
     game.vndb_id && el("span", {}, `·  ${game.vndb_id}`),
@@ -594,6 +613,7 @@ function tile(game) {
     { class: `lib-tile${isPlaying(game) ? " now-playing" : ""}`, ...opener(game) },
     el("div", { class: "tile-cover" }, coverOf(game), statusChip(game), nowBadge(game), playButton(game, "▶")),
     el("div", { class: "name" }, game.name),
+    el("div", { class: "muted small-text brand-name" }, gameBrandName(game)),
     el("div", { class: "muted small-text" }, readText(game)),
   );
 }
@@ -616,7 +636,12 @@ function line(game) {
     "div",
     { class: `lib-line${isPlaying(game) ? " now-playing" : ""}`, ...opener(game) },
     coverOf(game),
-    el("div", { class: "name" }, game.name, nowBadge(game)),
+    el(
+      "div",
+      { class: "line-title" },
+      el("div", { class: "name" }, game.name, nowBadge(game)),
+      el("span", { class: "muted small-text brand-name" }, gameBrandName(game)),
+    ),
     el("span", {}, statusChip(game) || ""),
     el(
       "span",
