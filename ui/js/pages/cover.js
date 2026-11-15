@@ -339,14 +339,15 @@ async function searchErogameScape(useVndbAltTitle = false) {
                   return;
                 }
                 try {
-                  await call("update_game", {
+                  status.textContent = t("Fetching ErogameScape details…");
+                  const details = await call("confirm_erogamescape", {
                     key: targetKey,
-                    fields: { erogamescape_id: Number(match.id) },
+                    id: Number(match.id),
                   });
                   if (targetKey !== key || searchVersion !== erogamescapeSearchVersion) {
                     return;
                   }
-                  gameEntry.erogamescape_id = Number(match.id);
+                  Object.assign(gameEntry, details);
                   renderErogameScape(gameEntry);
                   await done("ErogameScape match saved");
                 } catch (error) {

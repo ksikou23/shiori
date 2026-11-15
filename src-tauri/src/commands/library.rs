@@ -21,12 +21,8 @@ fn text(entry: &Entry, field: &str) -> String {
         .to_string()
 }
 
-fn valid_erogamescape_id(value: &Value) -> bool {
-    value.as_u64().is_some()
-}
-
 fn valid_erogamescape_update(value: &Value) -> bool {
-    value.is_null() || valid_erogamescape_id(value)
+    value.is_null()
 }
 
 pub fn visible_games(cfg: &Config) -> Vec<(String, Entry)> {
@@ -182,6 +178,39 @@ pub async fn search_erogamescape(
     blocking(move || crate::erogamescape::search(&query)).await
 }
 
+#[tauri::command]
+pub async fn confirm_erogamescape(
+    shared: SharedState<'_>,
+    key: String,
+    id: u64,
+) -> Result<crate::erogamescape::GameDetails, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || {
+        let details = crate::erogamescape::fetch_details(id)?;
+        let mut fields = Map::new();
+        fields.insert("erogamescape_id".into(), json!(details.erogamescape_id));
+        fields.insert(
+            "erogamescape_name".into(),
+            json!(details.erogamescape_name),
+        );
+        fields.insert(
+            "erogamescape_furigana".into(),
+            json!(details.erogamescape_furigana),
+        );
+        fields.insert(
+            "erogamescape_brand_id".into(),
+            json!(details.erogamescape_brand_id),
+        );
+        let mut cfg = shared.config.lock().unwrap();
+        cfg.set_game(&key, fields);
+        drop(cfg);
+
+        changed(&shared, &key);
+        Ok(details)
+    })
+    .await
+}
+
 fn changed(shared: &Shared, key: &str) {
     shared.send(Cmd::Reload);
     shared.emit("library-changed", json!({ "key": key }));
@@ -210,7 +239,7 @@ pub fn update_game(
             return Err(format!("unknown status {value}"));
         }
         if field == "erogamescape_id" && !valid_erogamescape_update(value) {
-            return Err("ErogameScape ID must contain only digits".into());
+            return Err("ErogameScape ID must be confirmed from search results".into());
         }
     }
     let remove_erogamescape_id = fields.get("erogamescape_id").is_some_and(Value::is_null);
@@ -226,6 +255,13 @@ pub fn update_game(
         let mut cfg = shared.config.lock().unwrap();
         if remove_erogamescape_id {
             cfg.remove_game_field(&key, "erogamescape_id");
+            for field in [
+                "erogamescape_name",
+                "erogamescape_furigana",
+                "erogamescape_brand_id",
+            ] {
+                cfg.remove_game_field(&key, field);
+            }
         }
         if !fields.is_empty() {
             cfg.set_game(&key, fields);
@@ -510,18 +546,13 @@ pub async fn get_wishlist(shared: SharedState<'_>) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{valid_erogamescape_id, valid_erogamescape_update};
+    use super::valid_erogamescape_update;
     use serde_json::json;
 
     #[test]
-    fn erogamescape_ids_must_be_nonnegative_integers() {
-        assert!(valid_erogamescape_id(&json!(12345)));
-        assert!(valid_erogamescape_id(&json!(0)));
-        assert!(!valid_erogamescape_id(&json!("12345")));
-        assert!(!valid_erogamescape_id(&json!(12.5)));
-        assert!(!valid_erogamescape_id(&json!(-1)));
-        assert!(!valid_erogamescape_id(&json!("")));
+    fn erogamescape_ids_must_be_confirmed_and_can_only_be_removed_here() {
         assert!(valid_erogamescape_update(&json!(null)));
+        assert!(!valid_erogamescape_update(&json!(12345)));
         assert!(!valid_erogamescape_update(&json!("12345")));
     }
 }

@@ -218,6 +218,7 @@ fn main() {
             commands::library::get_library,
             commands::library::get_game,
             commands::library::search_erogamescape,
+            commands::library::confirm_erogamescape,
             commands::library::merge_games,
             commands::library::vn_length,
             commands::library::update_game,

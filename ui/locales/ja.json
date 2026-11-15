@@ -483,6 +483,7 @@
     "Game title": "ゲーム名",
     "Enter a game title.": "ゲーム名を入力してください。",
     "Searching ErogameScape…": "批評空間を検索中…",
+    "Fetching ErogameScape details…": "批評空間の詳細情報を取得中…",
     "Loading VNDB alternate title…": "VNDBの別名を読み込み中…",
     "No ErogameScape matches found.": "批評空間に一致する作品が見つかりません。",
     "ErogameScape match saved": "批評空間の作品を登録しました",
