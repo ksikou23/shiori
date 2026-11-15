@@ -46,6 +46,16 @@ const TEMPLATE = `
             aria-autocomplete="list"
             aria-expanded="false"
           />
+          <button
+            type="button"
+            class="lib-filter-clear"
+            data-id="filter-clear"
+            aria-label="Clear filter"
+            title="Clear filter"
+            hidden
+          >
+            ×
+          </button>
         </div>
         <div class="lib-filter-suggestions" data-id="filter-suggestions" role="listbox" hidden></div>
       </div>
@@ -152,6 +162,8 @@ function build(container) {
   root.append(html(TEMPLATE));
   part("sort").querySelector('[data-v="furigana"]').textContent = t("Furigana");
   part("brand-sort").querySelector('[data-v="furigana"]').textContent = t("Furigana");
+  part("filter-clear").title = t("Clear filter");
+  part("filter-clear").setAttribute("aria-label", t("Clear filter"));
 
   part("filter").oninput = () => {
     brandSuggestionsOpen = true;
@@ -163,6 +175,16 @@ function build(container) {
     brandSuggestionsOpen = true;
     brandSuggestionIndex = -1;
     renderFilterControls();
+  };
+  part("filter-clear").onclick = () => {
+    part("filter").value = "";
+    selectedFilterBrandIds = [];
+    selectedFilterYears = [];
+    activeFilterTokenIndex = -1;
+    brandSuggestionsOpen = true;
+    brandSuggestionIndex = -1;
+    render();
+    part("filter").focus();
   };
   part("filter").onkeydown = (event) => {
     const input = part("filter");
@@ -561,6 +583,7 @@ function renderFilterControls() {
 
   const candidates = brandSuggestionsOpen ? filterCandidates(input.value) : [];
   brandSuggestionIndex = Math.min(brandSuggestionIndex, Math.max(0, candidates.length - 1));
+  part("filter-clear").hidden = !input.value && tokens.length === 0;
   input.setAttribute("aria-expanded", String(candidates.length > 0));
   suggestions.hidden = candidates.length === 0;
   suggestions.replaceChildren(

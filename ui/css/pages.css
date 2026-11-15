@@ -144,12 +144,13 @@
 }
 
 .lib-filter-control {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
   min-height: 38px;
-  padding: 3px 8px;
+  padding: 3px 34px 3px 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-alt);
@@ -168,6 +169,32 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.lib-head .lib-filter-control input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.lib-filter-clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 24px;
+  height: 28px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--subtle);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.lib-filter-clear[hidden] {
+  display: none;
+}
+
+.lib-filter-clear:hover {
+  color: var(--text);
 }
 
 .lib-filter-chips {
