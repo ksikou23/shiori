@@ -309,6 +309,7 @@ async function searchErogameScape(useVndbAltTitle = false) {
     }
 
     status.textContent = plural(matches.length, "result");
+    let confirmationPending = false;
     results.replaceChildren(
       ...matches.map((match) => {
         const isCurrent =
@@ -335,8 +336,16 @@ async function searchErogameScape(useVndbAltTitle = false) {
                 minWidth: "0",
               },
               onclick: async () => {
-                if (targetKey !== key || searchVersion !== erogamescapeSearchVersion) {
+                if (
+                  targetKey !== key ||
+                  searchVersion !== erogamescapeSearchVersion ||
+                  confirmationPending
+                ) {
                   return;
+                }
+                confirmationPending = true;
+                for (const button of results.querySelectorAll("button")) {
+                  button.disabled = true;
                 }
                 try {
                   status.textContent = t("Fetching ErogameScape details…");
@@ -352,6 +361,13 @@ async function searchErogameScape(useVndbAltTitle = false) {
                   await done("ErogameScape match saved");
                 } catch (error) {
                   status.textContent = String(error);
+                } finally {
+                  confirmationPending = false;
+                  if (targetKey === key && searchVersion === erogamescapeSearchVersion) {
+                    for (const button of results.querySelectorAll("button")) {
+                      button.disabled = false;
+                    }
+                  }
                 }
               },
             },

@@ -1,11 +1,13 @@
-use std::sync::LazyLock;
-use std::time::Duration;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use fancy_regex::Regex;
 use serde::Serialize;
 
 const SEARCH_URL: &str = "https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/kensaku.php";
+const REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 
+static REQUEST_GATE: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 static GAME_LINK: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?is)<a\b[^>]*href=["'][^"']*game\.php\?game=(\d+)[^"']*["'][^>]*>(.*?)</a>"#)
         .unwrap()
@@ -69,13 +71,15 @@ pub fn search(query: &str) -> Result<Vec<GameResult>, String> {
         .append_pair("category", "game")
         .append_pair("word_category", "name")
         .append_pair("word", query);
-    let html = client
-        .get(url)
-        .send()
-        .and_then(reqwest::blocking::Response::error_for_status)
-        .map_err(|error| format!("ErogameScape search failed: {error}"))?
-        .text()
-        .map_err(|error| format!("couldn't read ErogameScape search results: {error}"))?;
+    let html = paced_request(|| {
+        client
+            .get(url)
+            .send()
+            .and_then(reqwest::blocking::Response::error_for_status)
+            .map_err(|error| format!("ErogameScape search failed: {error}"))?
+            .text()
+            .map_err(|error| format!("couldn't read ErogameScape search results: {error}"))
+    })?;
 
     parse_results(&html)
 }
@@ -129,13 +133,38 @@ fn http_client() -> Result<reqwest::blocking::Client, String> {
 }
 
 fn fetch_page(client: &reqwest::blocking::Client, url: &str, page: &str) -> Result<String, String> {
-    client
-        .get(url)
-        .send()
-        .and_then(reqwest::blocking::Response::error_for_status)
-        .map_err(|error| format!("ErogameScape {page} page request failed: {error}"))?
-        .text()
-        .map_err(|error| format!("couldn't read ErogameScape {page} page: {error}"))
+    paced_request(|| {
+        client
+            .get(url)
+            .send()
+            .and_then(reqwest::blocking::Response::error_for_status)
+            .map_err(|error| format!("ErogameScape {page} page request failed: {error}"))?
+            .text()
+            .map_err(|error| format!("couldn't read ErogameScape {page} page: {error}"))
+    })
+}
+
+fn paced_request<T>(
+    request: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    paced_request_with(&REQUEST_GATE, REQUEST_INTERVAL, request)
+}
+
+fn paced_request_with<T>(
+    gate: &Mutex<Option<Instant>>,
+    interval: Duration,
+    request: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let mut last_request = gate
+        .lock()
+        .map_err(|_| "ErogameScape request gate is unavailable".to_string())?;
+    if let Some(last_request) = *last_request {
+        std::thread::sleep(interval.saturating_sub(last_request.elapsed()));
+    }
+
+    let result = request();
+    *last_request = Some(Instant::now());
+    result
 }
 
 fn parse_details(id: u64, game_page: &str, mod_page: &str) -> Result<GameDetails, String> {
@@ -295,7 +324,26 @@ fn decode_entities(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_brand_details, parse_details, parse_results};
+    use super::{paced_request_with, parse_brand_details, parse_details, parse_results};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn waits_between_completed_requests() {
+        let gate = Mutex::new(None);
+        let interval = Duration::from_millis(25);
+        paced_request_with(&gate, interval, || Ok(())).unwrap();
+        let previous_completion = gate.lock().unwrap().unwrap();
+        let mut next_start = None;
+
+        paced_request_with(&gate, interval, || {
+            next_start = Some(Instant::now());
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(next_start.unwrap().duration_since(previous_completion) >= interval);
+    }
 
     #[test]
     fn parses_game_results_with_disambiguating_details() {
