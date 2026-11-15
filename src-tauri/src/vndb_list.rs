@@ -180,6 +180,7 @@ pub fn import_finished(shared: &Arc<Shared>) -> Result<usize, String> {
             let fields = Map::from_iter([
                 ("title".into(), json!(vn.title)),
                 ("vndb_id".into(), json!(vn.id)),
+                ("vndb_aliases".into(), json!(vn.aliases)),
                 ("match_checked".into(), json!(true)),
                 ("status".into(), json!("finished")),
                 (

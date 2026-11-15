@@ -958,6 +958,10 @@ fn learned_fields(
         if text(entry, "vndb_alttitle") != vn.alt_title {
             learned.insert("vndb_alttitle".into(), json!(vn.alt_title));
         }
+        let aliases = json!(vn.aliases.clone());
+        if entry.get("vndb_aliases") != Some(&aliases) {
+            learned.insert("vndb_aliases".into(), aliases);
+        }
     }
     if !entry.contains_key("status") {
         learned.insert("status".into(), json!("playing"));
@@ -982,6 +986,7 @@ mod tests {
             id: "v1".into(),
             title: "Title".into(),
             alt_title: "Alternate title".into(),
+            aliases: vec!["Alias".into()],
             ..Default::default()
         };
         let learned = learned_fields(&Map::new(), "", Some(&vn), &Cover::default());
@@ -991,8 +996,13 @@ mod tests {
             learned.get("vndb_alttitle"),
             Some(&Value::from("Alternate title"))
         );
+        assert_eq!(
+            learned.get("vndb_aliases"),
+            Some(&Value::from(vec!["Alias".to_string()]))
+        );
         assert!(!learned.contains_key("alt_title"));
         let yaml = serde_yaml::to_string(&learned).unwrap();
         assert!(yaml.contains("vndb_alttitle: Alternate title"));
+        assert!(yaml.contains("vndb_aliases:\n- Alias"));
     }
 }
