@@ -42,6 +42,7 @@ const TEMPLATE = `
         <button data-v="most">Most read</button>
         <button data-v="recent">Recent</button>
         <button data-v="az">A–Z</button>
+        <button data-v="furigana">Furigana</button>
         <button data-v="release">Release date</button>
       </div>
       <span class="sort-sep"></span>
@@ -76,6 +77,9 @@ const SORTERS = {
   most: (a, b) => b.playtime - a.playtime,
   recent: (a, b) => b.last_played - a.last_played,
   az: (a, b) => a.name.localeCompare(b.name),
+  furigana: (a, b) =>
+    (a.furigana || a.name).localeCompare(b.furigana || b.name, "ja") ||
+    a.name.localeCompare(b.name, "ja"),
   release: (a, b) => b.released.localeCompare(a.released),
 };
 
@@ -106,6 +110,7 @@ const part = (id) => $(`[data-id="${id}"]`, root);
 function build(container) {
   root = container;
   root.append(html(TEMPLATE));
+  part("sort").querySelector('[data-v="furigana"]').textContent = t("Furigana");
 
   part("filter").oninput = render;
   part("status").onchange = render;

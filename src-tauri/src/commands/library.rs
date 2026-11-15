@@ -227,6 +227,7 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
             json!({
                 "key": key,
                 "name": screenshots::display_name(&key, &entry, &title_priority),
+                "furigana": text(&entry, "erogamescape_furigana"),
                 "search_names": search_names,
                 "status": text(&entry, "status"),
                 "playtime": entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0),
