@@ -81,10 +81,11 @@ async function ask(snap) {
   if (answer === "yes") {
     await call("confirm_match", { key: snap.key });
     toast(t("Saved: {name}", { name: snap.vn.title }));
+    await show("cover", { key: snap.key, back: "game", tab: "erogamescape" });
     await offerVndbList();
   } else if (answer === "pick") {
     await call("match_checked", { key: snap.key });
-    show("cover", { key: snap.key });
+    show("cover", { key: snap.key, searchErogamescapeAfterVn: true });
   } else if (answer === "not-vn") {
     await call("match_checked", { key: snap.key });
     await call("not_a_vn", { exe: snap.exe });

@@ -30,6 +30,19 @@ pub async fn search_vndb(shared: SharedState<'_>, query: String) -> Result<Vec<V
 }
 
 #[tauri::command]
+pub async fn vndb_alt_title(shared: SharedState<'_>, vn_id: String) -> Result<String, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || {
+        Ok(shared
+            .vndb
+            .get(&vn_id)?
+            .map(|vn| vn.alt_title)
+            .unwrap_or_default())
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn release_covers(
     shared: SharedState<'_>,
     vn_id: String,

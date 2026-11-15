@@ -599,6 +599,13 @@ impl Config {
         self.save_game(key);
     }
 
+    pub fn remove_game_field(&mut self, key: &str, field: &str) {
+        if let Some(entry) = self.games.get_mut(key) {
+            entry.remove(field);
+            self.save_game(key);
+        }
+    }
+
     pub fn replace_all(
         &mut self,
         data: Map<String, Value>,
@@ -888,6 +895,23 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("vnrpc-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         Config::load(&dir)
+    }
+
+    #[test]
+    fn erogamescape_ids_are_saved_as_yaml_numbers() {
+        let mut cfg = library("erogamescape-numeric");
+        add(&mut cfg, "test", json!({ "erogamescape_id": 12345 }));
+        let saved = fs::read_to_string(cfg.games_dir().join("test.yaml")).unwrap();
+        assert!(saved.contains("erogamescape_id: 12345"));
+    }
+
+    #[test]
+    fn erogamescape_id_can_be_removed_from_yaml() {
+        let mut cfg = library("erogamescape-remove");
+        add(&mut cfg, "test", json!({ "erogamescape_id": 12345 }));
+        cfg.remove_game_field("test", "erogamescape_id");
+        let saved = fs::read_to_string(cfg.games_dir().join("test.yaml")).unwrap();
+        assert!(!saved.contains("erogamescape_id"));
     }
 
     #[test]

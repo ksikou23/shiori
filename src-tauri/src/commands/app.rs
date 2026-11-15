@@ -248,6 +248,7 @@ fn last_read(shared: &Shared) -> Option<crate::state::Snapshot> {
         key,
         section_label: section,
         vn,
+        erogamescape_id: entry.get("erogamescape_id").and_then(Value::as_u64),
         playtime_seconds: playtime,
         cover: crate::state::Cover {
             local_path: cover,

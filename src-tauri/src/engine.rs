@@ -555,6 +555,7 @@ impl Engine {
             section_label: info.section_label,
             cover,
             vn,
+            erogamescape_id: entry.get("erogamescape_id").and_then(Value::as_u64),
             privacy,
             playtime_seconds: playtime,
             session_start: self.session_start,

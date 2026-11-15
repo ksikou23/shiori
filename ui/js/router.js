@@ -32,7 +32,7 @@ export function show(id, params = {}) {
 
   current = page;
   $("#content").scrollTop = 0;
-  page.show?.(params);
+  return page.show?.(params);
 }
 
 document.addEventListener("keydown", (event) => {

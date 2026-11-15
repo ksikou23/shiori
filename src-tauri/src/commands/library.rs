@@ -21,6 +21,14 @@ fn text(entry: &Entry, field: &str) -> String {
         .to_string()
 }
 
+fn valid_erogamescape_id(value: &Value) -> bool {
+    value.as_u64().is_some()
+}
+
+fn valid_erogamescape_update(value: &Value) -> bool {
+    value.is_null() || valid_erogamescape_id(value)
+}
+
 pub fn visible_games(cfg: &Config) -> Vec<(String, Entry)> {
     let user: Vec<String> = cfg
         .get("blacklist_exe")
@@ -167,6 +175,13 @@ pub fn get_game(shared: SharedState, key: String) -> Value {
     })
 }
 
+#[tauri::command]
+pub async fn search_erogamescape(
+    query: String,
+) -> Result<Vec<crate::erogamescape::GameResult>, String> {
+    blocking(move || crate::erogamescape::search(&query)).await
+}
+
 fn changed(shared: &Shared, key: &str) {
     shared.send(Cmd::Reload);
     shared.emit("library-changed", json!({ "key": key }));
@@ -176,9 +191,16 @@ fn changed(shared: &Shared, key: &str) {
 pub fn update_game(
     shared: SharedState,
     key: String,
-    fields: Map<String, Value>,
+    mut fields: Map<String, Value>,
 ) -> Result<(), String> {
-    const EDITABLE: [&str; 5] = ["status", "privacy", "title", "launcher", "section"];
+    const EDITABLE: [&str; 6] = [
+        "status",
+        "privacy",
+        "title",
+        "launcher",
+        "section",
+        "erogamescape_id",
+    ];
 
     for (field, value) in &fields {
         if !EDITABLE.contains(&field.as_str()) {
@@ -187,6 +209,13 @@ pub fn update_game(
         if field == "status" && !(value == "" || STATUSES.iter().any(|s| value == *s)) {
             return Err(format!("unknown status {value}"));
         }
+        if field == "erogamescape_id" && !valid_erogamescape_update(value) {
+            return Err("ErogameScape ID must contain only digits".into());
+        }
+    }
+    let remove_erogamescape_id = fields.get("erogamescape_id").is_some_and(Value::is_null);
+    if remove_erogamescape_id {
+        fields.remove("erogamescape_id");
     }
 
     let status = fields
@@ -195,7 +224,12 @@ pub fn update_game(
         .map(str::to_string);
     let vn_id = {
         let mut cfg = shared.config.lock().unwrap();
-        cfg.set_game(&key, fields);
+        if remove_erogamescape_id {
+            cfg.remove_game_field(&key, "erogamescape_id");
+        }
+        if !fields.is_empty() {
+            cfg.set_game(&key, fields);
+        }
         text(&cfg.game(&key), "vndb_id")
     };
 
@@ -472,4 +506,22 @@ pub async fn get_wishlist(shared: SharedState<'_>) -> Result<Value, String> {
         Ok(json!({ "wishlist": wishlist, "in_library": in_library }))
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{valid_erogamescape_id, valid_erogamescape_update};
+    use serde_json::json;
+
+    #[test]
+    fn erogamescape_ids_must_be_nonnegative_integers() {
+        assert!(valid_erogamescape_id(&json!(12345)));
+        assert!(valid_erogamescape_id(&json!(0)));
+        assert!(!valid_erogamescape_id(&json!("12345")));
+        assert!(!valid_erogamescape_id(&json!(12.5)));
+        assert!(!valid_erogamescape_id(&json!(-1)));
+        assert!(!valid_erogamescape_id(&json!("")));
+        assert!(valid_erogamescape_update(&json!(null)));
+        assert!(!valid_erogamescape_update(&json!("12345")));
+    }
 }

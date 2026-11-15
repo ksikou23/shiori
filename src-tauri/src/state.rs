@@ -31,6 +31,7 @@ pub struct Snapshot {
     pub section_label: String,
     pub cover: Cover,
     pub vn: Option<VnResult>,
+    pub erogamescape_id: Option<u64>,
     pub privacy: String,
     pub playtime_seconds: i64,
     pub session_start: i64,

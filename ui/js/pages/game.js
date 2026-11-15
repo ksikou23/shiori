@@ -51,6 +51,7 @@ const TEMPLATE = `
         <h2 data-id="name"></h2>
         <button class="path" data-id="path" title="Show in folder"></button>
         <div class="row" data-id="vndb"></div>
+        <div class="row" data-id="erogamescape"></div>
         <button class="link" data-id="change-cover">Change VN / cover…</button>
       </div>
     </div>
@@ -257,6 +258,7 @@ async function load() {
   setCover(part("cover"), { path: game.cover, nsfw: entry.cover_nsfw, label: game.name });
 
   renderVndb(entry);
+  renderErogameScape(entry);
   renderStatus(entry);
   renderPrivacy(entry.privacy || "full");
   renderVote(entry);
@@ -339,6 +341,37 @@ function renderVndb(entry) {
       ),
     );
   }
+}
+
+function renderErogameScape(entry) {
+  const box = part("erogamescape");
+  const id = entry.erogamescape_id;
+  if (!id && id !== 0) {
+    box.replaceChildren(
+      el(
+        "button",
+        {
+          class: "btn secondary small",
+          onclick: () => show("cover", { key, back: "game", tab: "erogamescape" }),
+        },
+        t("ErogameScape ID not confirmed"),
+      ),
+    );
+    return;
+  }
+  box.replaceChildren(
+    el(
+      "button",
+      {
+        class: "btn secondary small",
+        onclick: () =>
+          call("open_url", {
+            url: `https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game=${id}`,
+          }),
+      },
+      t("ErogameScape ID {id}", { id }),
+    ),
+  );
 }
 
 async function confirmMatch() {
