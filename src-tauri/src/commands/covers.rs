@@ -30,6 +30,19 @@ pub async fn search_vndb(shared: SharedState<'_>, query: String) -> Result<Vec<V
 }
 
 #[tauri::command]
+pub async fn vndb_alt_title(shared: SharedState<'_>, vn_id: String) -> Result<String, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || {
+        Ok(shared
+            .vndb
+            .get(&vn_id)?
+            .map(|vn| vn.alt_title)
+            .unwrap_or_default())
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn release_covers(
     shared: SharedState<'_>,
     vn_id: String,
@@ -50,6 +63,8 @@ pub async fn set_game_vn(
     key: String,
     vn_id: String,
     title: String,
+    alt_title: String,
+    aliases: Vec<String>,
 ) -> Result<(), String> {
     let shared = Arc::clone(&shared);
     blocking(move || {
@@ -60,7 +75,10 @@ pub async fn set_game_vn(
             ("cover_source", "vndb"),
             ("cover_value", &vn_id),
         ];
-        apply(&shared, &key, fields(&pairs));
+        let mut game_fields = fields(&pairs);
+        game_fields.insert("vndb_alttitle".into(), json!(alt_title));
+        game_fields.insert("vndb_aliases".into(), json!(aliases));
+        apply(&shared, &key, game_fields);
         Ok(())
     })
     .await
@@ -72,6 +90,8 @@ pub async fn set_release_cover(
     key: String,
     vn_id: String,
     title: String,
+    alt_title: String,
+    aliases: Vec<String>,
     url: String,
 ) -> Result<(), String> {
     let shared = Arc::clone(&shared);
@@ -83,7 +103,10 @@ pub async fn set_release_cover(
             ("cover_source", "url"),
             ("cover_value", &url),
         ];
-        apply(&shared, &key, fields(&pairs));
+        let mut game_fields = fields(&pairs);
+        game_fields.insert("vndb_alttitle".into(), json!(alt_title));
+        game_fields.insert("vndb_aliases".into(), json!(aliases));
+        apply(&shared, &key, game_fields);
         Ok(())
     })
     .await

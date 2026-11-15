@@ -136,6 +136,146 @@
   width: 280px;
 }
 
+.lib-filter {
+  position: relative;
+  width: 280px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.lib-filter-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 38px;
+  padding: 3px 34px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+.lib-filter-control:focus-within {
+  border-color: var(--accent);
+}
+
+.lib-head .lib-filter-control input {
+  flex: 1;
+  width: 80px;
+  min-width: 80px;
+  height: 28px;
+  padding: 3px 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.lib-head .lib-filter-control input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.lib-filter-clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 24px;
+  height: 28px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--subtle);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.lib-filter-clear[hidden] {
+  display: none;
+}
+
+.lib-filter-clear:hover {
+  color: var(--text);
+}
+
+.lib-filter-chips {
+  display: contents;
+}
+
+.lib-filter .lib-filter-chip {
+  flex: none;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 6px 2px 8px;
+  font-size: 12px;
+}
+
+.lib-filter-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-filter-chip button {
+  flex: none;
+  padding: 0 2px;
+}
+
+.lib-filter-chip.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lib-filter-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: 6px;
+  max-height: 260px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 18px -8px rgb(0 0 0 / 0.45);
+}
+
+.lib-filter-suggestions[hidden] {
+  display: none;
+}
+
+.lib-filter-suggestion {
+  max-width: 100%;
+  border: 0;
+  color: var(--text);
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lib-filter-suggestion:hover,
+.lib-filter-suggestion.on {
+  outline: 1px solid var(--accent);
+}
+
+.lib-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lib-brand-toggle.toggle {
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+}
+
 .lib-head :is(.btn, input),
 .lib-tools :is(.btn, select) {
   height: 38px;
@@ -150,6 +290,16 @@
   display: inline-flex;
   flex-wrap: wrap;
   gap: 2px;
+}
+
+.brand-tools .sort-label {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.brand-tools[hidden] {
+  display: none;
 }
 
 .sort-sep {
@@ -183,6 +333,59 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.lib-list.view-brands {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.brand-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    transform 0.15s var(--ease);
+}
+
+.brand-group:hover,
+.brand-group:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.brand-thumbnails {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.brand-thumb-cover {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 5 / 7;
+  border-radius: 5px;
+}
+
+.brand-detail-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lib-list.view-brands > .lib-row,
+.lib-list.view-brands > .lib-empty {
+  grid-column: 1 / -1;
 }
 
 .lib-row {
@@ -347,6 +550,22 @@
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lib-line .line-title {
+  min-width: 0;
+}
+
+.lib-line .brand-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lib-tile .brand-name {
+  overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 

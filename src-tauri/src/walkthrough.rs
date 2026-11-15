@@ -632,7 +632,10 @@ fn cached_index(
 }
 
 fn names_for(shared: &Shared, key: &str) -> Vec<String> {
-    let entry = shared.config.lock().unwrap().game(key);
+    let cfg = shared.config.lock().unwrap();
+    let entry = cfg.game(key);
+    let title_priority = cfg.display_title_priority();
+    drop(cfg);
     let text = |f: &str| entry.get(f).and_then(Value::as_str).unwrap_or("").to_string();
     let mut names = Vec::new();
     let vn = [text("vndb_id"), text("matched_vndb_id")]
@@ -645,7 +648,11 @@ fn names_for(shared: &Shared, key: &str) -> Vec<String> {
         names.extend(vn.other_titles);
     }
     names.push(text("title"));
-    names.push(crate::screenshots::display_name(key, &entry));
+    names.push(crate::screenshots::display_name(
+        key,
+        &entry,
+        &title_priority,
+    ));
     names.retain(|n| !n.trim().is_empty());
     names.dedup();
     names

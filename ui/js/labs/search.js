@@ -1,6 +1,7 @@
 import { $$, el } from "../dom.js";
 import { show } from "../router.js";
 import { invoke } from "../tauri.js";
+import { call } from "../ui.js";
 import { t } from "../i18n.js";
 import { raw } from "./util.js";
 
@@ -33,18 +34,34 @@ async function open() {
     hint: t("Page"),
     go: () => show(button.dataset.page),
   }));
-  const games = (await invoke("get_library").catch(() => [])).map((game) => ({
+  const libraryGames = await invoke("get_library").catch(() => []);
+  const games = libraryGames.map((game) => ({
     label: game.name,
+    searchNames: game.search_names || [],
     hint: "VN",
     go: () => show("game", { key: game.key }),
   }));
-  const items = [...pages, ...games];
+  const hasBrandIds = libraryGames.some((game) => game.brand_id);
+  const unknownBrands = libraryGames.some((game) => !game.brand_id)
+    ? [
+        {
+          label: t("Unknown brand"),
+          hint: t("Brand"),
+          searchNames: [],
+          go: () => show("library", { filterBrandId: "unknown" }),
+        },
+      ]
+    : [];
+  let items = [...pages, ...unknownBrands, ...games];
   let results = [];
   let selected = 0;
+  let brandSearchStarted = false;
 
   const render = () => {
     const query = input.value.trim().toLowerCase();
-    results = items.filter((item) => item.label.toLowerCase().includes(query)).slice(0, 12);
+    results = items
+      .filter((item) => [item.label, ...(item.searchNames || [])].some((name) => name.toLowerCase().includes(query)))
+      .slice(0, 12);
     selected = Math.min(selected, Math.max(0, results.length - 1));
     list.replaceChildren(
       ...results.map((item, i) => {
@@ -63,9 +80,33 @@ async function open() {
     );
   };
 
+  const loadBrands = () => {
+    if (brandSearchStarted || !hasBrandIds) {
+      return;
+    }
+    brandSearchStarted = true;
+    call("get_library_brands")
+      .then((brands) => {
+        const brandItems = brands
+          .filter((brand) => String(brand.name || "").trim())
+          .map((brand) => ({
+            label: brand.name,
+            searchNames: brand.search_names || [],
+            hint: t("Brand"),
+            go: () => show("library", { filterBrandId: brand.id }),
+          }));
+        items = [...pages, ...brandItems, ...unknownBrands, ...games];
+        render();
+      })
+      .catch(() => {});
+  };
+
   input.oninput = () => {
     selected = 0;
     render();
+    if (input.value.trim()) {
+      loadBrands();
+    }
   };
   input.onkeydown = (event) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {

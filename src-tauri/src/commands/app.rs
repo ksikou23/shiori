@@ -243,21 +243,30 @@ fn last_read(shared: &Shared) -> Option<crate::state::Snapshot> {
         let playtime = cfg.playtime(&key);
         (key, entry, cover, playtime)
     };
+    let title_priority = shared.config.lock().unwrap().display_title_priority();
     let text = |f: &str| entry.get(f).and_then(Value::as_str).unwrap_or("").to_string();
     let vn = [text("vndb_id"), text("matched_vndb_id")]
         .into_iter()
         .find(|id| !id.is_empty())
         .and_then(|id| shared.vndb.get(&id).ok().flatten());
+    let game_name = screenshots::display_name_with_vn_titles(
+        &key,
+        &entry,
+        &title_priority,
+        vn.as_ref().map(|vn| vn.title.as_str()),
+        vn.as_ref().map(|vn| vn.alt_title.as_str()),
+    );
     let section = Some(text("section"))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Chapter 2".into());
 
     Some(crate::state::Snapshot {
         detected: true,
-        game_name: screenshots::display_name(&key, &entry),
+        game_name,
         key,
         section_label: section,
         vn,
+        erogamescape_id: entry.get("erogamescape_id").and_then(Value::as_u64),
         playtime_seconds: playtime,
         cover: crate::state::Cover {
             local_path: cover,

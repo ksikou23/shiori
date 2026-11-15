@@ -55,7 +55,8 @@ matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
 subscribe("settings", applyTheme);
 
 for (const button of $$("nav button")) {
-  button.onclick = () => show(button.dataset.page);
+  button.onclick = () =>
+    show(button.dataset.page, button.dataset.page === "library" ? { resetBrandSelection: true } : {});
 }
 
 $("#pause-btn").onclick = () => call("set_paused", { paused: !store.snapshot.paused });

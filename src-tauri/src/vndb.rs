@@ -32,6 +32,7 @@ pub struct VnResult {
     pub nsfw: bool,
     pub rating: f64,
     pub length_minutes: i64,
+    pub aliases: Vec<String>,
     pub other_titles: Vec<String>,
 }
 
@@ -43,6 +44,16 @@ pub(crate) fn is_nsfw(image: &Value) -> bool {
 
 fn text(value: &Value) -> String {
     value.as_str().unwrap_or("").to_string()
+}
+
+fn aliases(o: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    for alias in o["aliases"].as_array().into_iter().flatten().map(text) {
+        if !alias.is_empty() && !out.contains(&alias) {
+            out.push(alias);
+        }
+    }
+    out
 }
 
 fn other_titles(o: &Value) -> Vec<String> {
@@ -75,12 +86,32 @@ impl VnResult {
             nsfw: is_nsfw(&o["image"]),
             rating: o["rating"].as_f64().unwrap_or(0.0),
             length_minutes: o["length_minutes"].as_i64().unwrap_or(0),
+            aliases: aliases(o),
             other_titles: other_titles(o),
         }
     }
 
     pub fn url(&self) -> String {
         format!("https://vndb.org/{}", self.id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VnResult;
+    use serde_json::json;
+
+    #[test]
+    fn aliases_are_read_separately_from_other_titles() {
+        let vn = VnResult::from_api(&json!({
+            "id": "v1",
+            "title": "Title",
+            "alttitle": "Alternate title",
+            "aliases": ["Alias", "Alias", ""],
+        }));
+
+        assert_eq!(vn.aliases, ["Alias"]);
+        assert!(vn.other_titles.contains(&"Alias".to_string()));
     }
 }
 
@@ -259,6 +290,20 @@ impl Vndb {
         let _ = fs::create_dir_all(&self.cache_dir);
         let _ = fs::write(&cache, first.to_string());
         Ok(Some(VnResult::from_api(&first)))
+    }
+
+    pub fn cached(&self, id: &str) -> Option<VnResult> {
+        let id = vn_id(id);
+        if !id
+            .strip_prefix('v')
+            .is_some_and(|digits| !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
+        {
+            return None;
+        }
+        let raw = fs::read_to_string(self.cache_dir.join(format!("id_{id}.json")))
+            .ok()
+            .and_then(|contents| serde_json::from_str(&contents).ok())?;
+        has_length(&raw).then(|| VnResult::from_api(&raw))
     }
 
     pub fn release_dates(&self, ids: &[String]) -> Result<Vec<(String, String)>, String> {

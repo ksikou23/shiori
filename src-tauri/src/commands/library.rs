@@ -5,6 +5,7 @@ use serde_json::{json, Map, Value};
 
 use super::{blocking, SharedState};
 use crate::config::{Config, Entry, STATUSES};
+use crate::erogamescape::BrandDetails;
 use crate::engines::{blacklist_set, is_windows_app, normalize_exe};
 use crate::launcher::{self, LaunchError};
 use crate::screenshots;
@@ -12,6 +13,7 @@ use crate::shell;
 use crate::state::{Cmd, Shared};
 use crate::vndb::VnResult;
 use crate::vndb_list;
+use wana_kana::ConvertJapanese;
 
 fn text(entry: &Entry, field: &str) -> String {
     entry
@@ -19,6 +21,154 @@ fn text(entry: &Entry, field: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string()
+}
+
+fn hiragana_variant(value: &str) -> String {
+    value.to_hiragana()
+}
+
+fn romaji_variant(value: &str) -> String {
+    value.to_romaji()
+}
+
+fn kunrei_variant(value: &str) -> String {
+    let mut result = String::new();
+    let mut kana_run = String::new();
+
+    for ch in value.chars() {
+        if matches!(ch as u32, 0x3041..=0x30ff | 0x31f0..=0x31ff | 0xff66..=0xff9f) {
+            kana_run.push(ch);
+        } else {
+            if !kana_run.is_empty() {
+                result.push_str(&kunrei_romaji(&kana_run));
+                kana_run.clear();
+            }
+            result.push(ch);
+        }
+    }
+
+    if !kana_run.is_empty() {
+        result.push_str(&kunrei_romaji(&kana_run));
+    }
+    result
+}
+
+fn kunrei_romaji(value: &str) -> String {
+    let exceptions = [
+        ("っぢゃ", '\u{e005}', "ddya"),
+        ("っぢゅ", '\u{e006}', "ddyu"),
+        ("っぢょ", '\u{e007}', "ddyo"),
+        ("っぢ", '\u{e008}', "ddi"),
+        ("っづ", '\u{e009}', "ddu"),
+        ("ぢゃ", '\u{e000}', "dya"),
+        ("ぢゅ", '\u{e001}', "dyu"),
+        ("ぢょ", '\u{e002}', "dyo"),
+        ("ぢ", '\u{e003}', "di"),
+        ("づ", '\u{e004}', "du"),
+    ];
+    let mut hiragana = value.to_hiragana();
+    for (kana, marker, _) in exceptions {
+        hiragana = hiragana.replace(kana, &marker.to_string());
+    }
+
+    let mut result = kunrei_from_hepburn(&hiragana.to_romaji());
+    for (_, marker, romanization) in exceptions {
+        result = result.replace(marker, romanization);
+    }
+    result
+}
+
+fn kunrei_from_hepburn(value: &str) -> String {
+    [
+        ("sha", "sya"),
+        ("shu", "syu"),
+        ("sho", "syo"),
+        ("cha", "tya"),
+        ("chu", "tyu"),
+        ("cho", "tyo"),
+        ("ja", "zya"),
+        ("ju", "zyu"),
+        ("jo", "zyo"),
+        ("shi", "si"),
+        ("chi", "ti"),
+        ("tsu", "tu"),
+        ("fu", "hu"),
+        ("ji", "zi"),
+    ]
+    .into_iter()
+    .fold(value.to_string(), |result, (hepburn, kunrei)| {
+        result.replace(hepburn, kunrei)
+    })
+}
+
+fn search_name_forms(names: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut search_names = Vec::new();
+    for name in names.into_iter().filter(|name| !name.trim().is_empty()) {
+        let hiragana = hiragana_variant(&name);
+        let romaji = romaji_variant(&name);
+        let kunrei = kunrei_variant(&name);
+        let has_hiragana_variant = hiragana != name;
+        let has_romaji_variant = romaji != hiragana;
+        let has_kunrei_variant = kunrei != name;
+        if !search_names.contains(&name) {
+            search_names.push(name);
+        }
+        if has_hiragana_variant && !search_names.contains(&hiragana) {
+            search_names.push(hiragana);
+        }
+        if has_romaji_variant && !search_names.contains(&romaji) {
+            search_names.push(romaji);
+        }
+        if has_kunrei_variant && !search_names.contains(&kunrei) {
+            search_names.push(kunrei);
+        }
+    }
+    search_names
+}
+
+fn library_search_names(entry: &Entry) -> Vec<String> {
+    let names = [
+        "title",
+        "name",
+        "vndb_title",
+        "vndb_alttitle",
+        "erogamescape_name",
+        "erogamescape_furigana",
+    ]
+    .into_iter()
+    .map(|field| text(entry, field))
+    .chain(
+        entry
+            .get("vndb_aliases")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string),
+    );
+    search_name_forms(names)
+}
+
+fn library_brand(brand: BrandDetails) -> Value {
+    let search_names = search_name_forms([brand.name.clone(), brand.furigana.clone()]);
+    json!({
+        "id": brand.id,
+        "name": brand.name,
+        "furigana": brand.furigana,
+        "search_names": search_names,
+    })
+}
+
+fn vndb_search_names(vn: &VnResult) -> Vec<String> {
+    search_name_forms(
+        [vn.title.clone(), vn.alt_title.clone()]
+            .into_iter()
+            .chain(vn.aliases.iter().cloned()),
+    )
+}
+
+fn valid_erogamescape_update(value: &Value) -> bool {
+    value.is_null()
 }
 
 pub fn visible_games(cfg: &Config) -> Vec<(String, Entry)> {
@@ -54,21 +204,58 @@ fn cover_of(cfg: &Config, entry: &Entry) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+fn ensure_brand_info(shared: &Shared, id: u64) -> Result<BrandDetails, String> {
+    if let Some(brand) = shared.config.lock().unwrap().brand(id).cloned() {
+        return Ok(brand);
+    }
+
+    let brand = crate::erogamescape::fetch_brand_details(id)?;
+    let mut cfg = shared.config.lock().unwrap();
+    if let Some(cached) = cfg.brand(id) {
+        return Ok(cached.clone());
+    }
+    cfg.set_brand(brand.clone())
+        .map_err(|error| format!("couldn't save brand {}: {error}", brand.id))?;
+    Ok(brand)
+}
+
 #[tauri::command(async)]
 pub fn get_library(shared: SharedState) -> Vec<Value> {
-    let cfg = shared.config.lock().unwrap();
+    let (title_priority, games) = {
+        let cfg = shared.config.lock().unwrap();
+        let title_priority = cfg.display_title_priority();
+        let games = visible_games(&cfg)
+            .into_iter()
+            .map(|(key, entry)| {
+                let cover = cover_of(&cfg, &entry);
+                (key, entry, cover)
+            })
+            .collect::<Vec<_>>();
+        (title_priority, games)
+    };
 
-    visible_games(&cfg)
+    games
         .into_iter()
-        .map(|(key, entry)| {
+        .map(|(key, entry, cover)| {
             let vn_id = [text(&entry, "vndb_id"), text(&entry, "matched_vndb_id")]
                 .into_iter()
                 .find(|id| !id.is_empty())
                 .unwrap_or_default();
+            let mut search_names = library_search_names(&entry);
+            if let Some(vn) = shared.vndb.cached(&vn_id) {
+                for name in vndb_search_names(&vn) {
+                    if !search_names.contains(&name) {
+                        search_names.push(name);
+                    }
+                }
+            }
 
             json!({
                 "key": key,
-                "name": screenshots::display_name(&key, &entry),
+                "name": screenshots::display_name(&key, &entry, &title_priority),
+                "furigana": text(&entry, "erogamescape_furigana"),
+                "brand_id": entry.get("erogamescape_brand_id").and_then(Value::as_u64),
+                "search_names": search_names,
                 "status": text(&entry, "status"),
                 "playtime": entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0),
                 "daily": entry.get("daily").cloned().unwrap_or(json!({})),
@@ -80,10 +267,65 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
                     && launcher::launch_exe(&entry).is_empty(),
                 "released": if text(&entry, "released_vn") == vn_id { text(&entry, "released") } else { String::new() },
                 "vndb_id": vn_id,
-                "cover": cover_of(&cfg, &entry),
+                "cover": cover,
             })
         })
         .collect()
+}
+
+#[tauri::command]
+pub async fn get_library_brands(shared: SharedState<'_>) -> Result<Vec<Value>, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || {
+        let mut ids = {
+            let cfg = shared.config.lock().unwrap();
+            visible_games(&cfg)
+                .iter()
+                .filter_map(|(_, entry)| {
+                    entry
+                        .get("erogamescape_brand_id")
+                        .and_then(Value::as_u64)
+                        .filter(|id| *id > 0)
+                })
+                .collect::<Vec<_>>()
+        };
+        ids.sort_unstable();
+        ids.dedup();
+
+        let mut brands = Vec::with_capacity(ids.len());
+        let mut errors = Vec::new();
+        for id in ids {
+            match ensure_brand_info(&shared, id) {
+                Ok(brand) => brands.push(brand),
+                Err(error) => {
+                    errors.push(error);
+                    brands.push(BrandDetails {
+                        id,
+                        name: String::new(),
+                        furigana: String::new(),
+                    });
+                }
+            }
+        }
+
+        if !errors.is_empty() {
+            shared.emit(
+                "toast",
+                json!({
+                    "title": format!(
+                        "Couldn't load {} brand details; showing brand IDs instead.",
+                        errors.len()
+                    ),
+                    "ok": false,
+                }),
+            );
+            for error in errors {
+                eprintln!("{error}");
+            }
+        }
+        Ok(brands.into_iter().map(library_brand).collect())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -133,6 +375,7 @@ pub async fn fill_release_dates(shared: SharedState<'_>) -> Result<usize, String
 #[tauri::command(async)]
 pub fn get_game(shared: SharedState, key: String) -> Value {
     let mut cfg = shared.config.lock().unwrap();
+    let title_priority = cfg.display_title_priority();
     let entry = cfg.game(&key);
 
     let folder = screenshots::folder_for(&mut cfg, &key, false);
@@ -146,7 +389,7 @@ pub fn get_game(shared: SharedState, key: String) -> Value {
             let other_entry = cfg.game(&other);
             json!({
                 "key": other,
-                "name": screenshots::display_name(&other, &other_entry),
+                "name": screenshots::display_name(&other, &other_entry, &title_priority),
                 "playtime": other_entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0),
             })
         })
@@ -154,7 +397,7 @@ pub fn get_game(shared: SharedState, key: String) -> Value {
 
     json!({
         "key": key,
-        "name": screenshots::display_name(&key, &entry),
+        "name": screenshots::display_name(&key, &entry, &title_priority),
         "entry": entry,
         "cover": cover_of(&cfg, &entry),
         "shots": shots.iter().take(5).map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>(),
@@ -165,6 +408,56 @@ pub fn get_game(shared: SharedState, key: String) -> Value {
         "hotkey": cfg.str("screenshot_hotkey"),
         "duplicates": duplicates,
     })
+}
+
+#[tauri::command]
+pub async fn search_erogamescape(
+    query: String,
+) -> Result<Vec<crate::erogamescape::GameResult>, String> {
+    blocking(move || crate::erogamescape::search(&query)).await
+}
+
+#[tauri::command]
+pub async fn confirm_erogamescape(
+    shared: SharedState<'_>,
+    key: String,
+    id: u64,
+) -> Result<crate::erogamescape::GameDetails, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || {
+        let details = crate::erogamescape::fetch_details(id)?;
+        let brand_error = ensure_brand_info(&shared, details.erogamescape_brand_id).err();
+        let mut fields = Map::new();
+        fields.insert("erogamescape_id".into(), json!(details.erogamescape_id));
+        fields.insert(
+            "erogamescape_name".into(),
+            json!(details.erogamescape_name),
+        );
+        fields.insert(
+            "erogamescape_furigana".into(),
+            json!(details.erogamescape_furigana),
+        );
+        fields.insert(
+            "erogamescape_brand_id".into(),
+            json!(details.erogamescape_brand_id),
+        );
+        let mut cfg = shared.config.lock().unwrap();
+        cfg.set_game(&key, fields);
+        drop(cfg);
+
+        if let Some(error) = brand_error {
+            shared.emit(
+                "toast",
+                json!({
+                    "title": format!("Couldn't save ErogameScape brand information: {error}"),
+                    "ok": false,
+                }),
+            );
+        }
+        changed(&shared, &key);
+        Ok(details)
+    })
+    .await
 }
 
 fn changed(shared: &Shared, key: &str) {
@@ -193,7 +486,7 @@ pub fn update_game(
     key: String,
     fields: Map<String, Value>,
 ) -> Result<(), String> {
-    const EDITABLE: [&str; 8] = [
+    const EDITABLE: [&str; 9] = [
         "status",
         "privacy",
         "title",
@@ -202,6 +495,7 @@ pub fn update_game(
         "sandboxie_box",
         "sandboxie_auto_update_box",
         "sandboxie_use_default_box",
+        "erogamescape_id",
     ];
     let mut fields = fields;
     let reset_sandboxie_box = fields.get("sandboxie_box").is_some_and(Value::is_null);
@@ -222,6 +516,9 @@ pub fn update_game(
         if field == "sandboxie_use_default_box" && !value.is_boolean() {
             return Err("sandboxie_use_default_box must be a boolean".into());
         }
+        if field == "erogamescape_id" && !valid_erogamescape_update(value) {
+            return Err("ErogameScape ID must be confirmed from search results".into());
+        }
     }
 
     if let Some(value) = fields.get("sandboxie_box").filter(|value| !value.is_null()) {
@@ -233,6 +530,10 @@ pub fn update_game(
         }
         fields.insert("sandboxie_box".into(), json!(box_name));
     }
+    let remove_erogamescape_id = fields.get("erogamescape_id").is_some_and(Value::is_null);
+    if remove_erogamescape_id {
+        fields.remove("erogamescape_id");
+    }
 
     let status = fields
         .get("status")
@@ -243,6 +544,16 @@ pub fn update_game(
         if reset_sandboxie_box {
             cfg.remove_game_field(&key, "sandboxie_box");
             fields.remove("sandboxie_box");
+        }
+        if remove_erogamescape_id {
+            cfg.remove_game_field(&key, "erogamescape_id");
+            for field in [
+                "erogamescape_name",
+                "erogamescape_furigana",
+                "erogamescape_brand_id",
+            ] {
+                cfg.remove_game_field(&key, field);
+            }
         }
         if !fields.is_empty() {
             cfg.set_game(&key, fields);
@@ -407,8 +718,10 @@ pub fn set_tool_path(shared: SharedState, launcher: String, path: String) -> Res
 
 #[tauri::command(async)]
 pub fn create_shortcut(shared: SharedState, key: String) -> Result<String, LaunchError> {
-    let entry = shared.config.lock().unwrap().game(&key);
-    let name = screenshots::display_name(&key, &entry);
+    let cfg = shared.config.lock().unwrap();
+    let entry = cfg.game(&key);
+    let name = screenshots::display_name(&key, &entry, &cfg.display_title_priority());
+    drop(cfg);
     let app_exe = std::env::current_exe().map_err(|e| LaunchError::Failed(e.to_string()))?;
     let game_exe = PathBuf::from(launcher::launch_exe(&entry));
     if !game_exe.is_file() {
@@ -523,4 +836,78 @@ pub async fn get_wishlist(shared: SharedState<'_>) -> Result<Value, String> {
         Ok(json!({ "wishlist": wishlist, "in_library": in_library }))
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        kunrei_variant, library_brand, library_search_names, romaji_variant, search_name_forms,
+        valid_erogamescape_update, BrandDetails,
+    };
+    use serde_json::{json, Map};
+
+    #[test]
+    fn library_filter_names_include_all_sources_and_hiragana_furigana() {
+        let entry = Map::from_iter([
+            ("title".into(), json!("VNDB title")),
+            ("vndb_title".into(), json!("VNDB title")),
+            ("vndb_alttitle".into(), json!("VNDB alternate")),
+            ("vndb_aliases".into(), json!(["VNDB alias"])),
+            ("erogamescape_name".into(), json!("批評空間タイトル")),
+            ("erogamescape_furigana".into(), json!("ヒヒョウクウカン")),
+        ]);
+        let names = library_search_names(&entry);
+
+        for expected in [
+            "VNDB title",
+            "VNDB alternate",
+            "VNDB alias",
+            "批評空間タイトル",
+            "ヒヒョウクウカン",
+            "ひひょうくうかん",
+            "hihyoukuukan",
+        ] {
+            assert!(names.iter().any(|name| name == expected), "{expected}");
+        }
+    }
+
+    #[test]
+    fn brand_search_names_include_hiragana_and_romanized_furigana() {
+        let brand = library_brand(BrandDetails {
+            id: 1171,
+            name: "枕".into(),
+            furigana: "マクラ".into(),
+        });
+        let names = brand["search_names"].as_array().unwrap();
+
+        assert!(names.iter().any(|name| name == "まくら"));
+        assert!(names.iter().any(|name| name == "makura"));
+    }
+
+    #[test]
+    fn furigana_romaji_supports_digraphs_gemination_and_long_vowels() {
+        assert_eq!(romaji_variant("ハツユキサクラ"), "hatsuyukisakura");
+        assert_eq!(romaji_variant("マッチャ"), "matcha");
+        assert_eq!(romaji_variant("ゲーム"), "geemu");
+    }
+
+    #[test]
+    fn furigana_search_supports_hepburn_and_kunrei_romanization() {
+        let names = search_name_forms(["シンブン チュウ".to_string()]);
+
+        assert!(names.iter().any(|name| name == "shinbun chuu"));
+        assert!(names.iter().any(|name| name == "sinbun tyuu"));
+        assert_eq!(kunrei_variant("Shinシン"), "Shinsin");
+        assert_eq!(kunrei_variant("ぢづ"), "didu");
+        assert_eq!(kunrei_variant("ヂャヂュヂョ"), "dyadyudyo");
+        assert_eq!(kunrei_variant("っぢゃっづ"), "ddyaddu");
+        assert_eq!(kunrei_variant("ﾁﾞ"), "di");
+    }
+
+    #[test]
+    fn erogamescape_ids_must_be_confirmed_and_can_only_be_removed_here() {
+        assert!(valid_erogamescape_update(&json!(null)));
+        assert!(!valid_erogamescape_update(&json!(12345)));
+        assert!(!valid_erogamescape_update(&json!("12345")));
+    }
 }

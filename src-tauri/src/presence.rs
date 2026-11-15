@@ -115,6 +115,17 @@ pub fn vars(snap: &Snapshot, entry: &Map<String, Value>, original_first: bool, l
         ("year", snap.vn.as_ref().map(|vn| vn.year.chars().take(4).collect()).unwrap_or_default()),
         ("engine", snap.engine_name.clone()),
         ("vndb", snap.vn.as_ref().map(|vn| vn.url()).unwrap_or_default()),
+        (
+            "erogamescape",
+            snap.erogamescape_id
+                .filter(|id| *id > 0)
+                .map(|id| {
+                    format!(
+                        "https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game={id}"
+                    )
+                })
+                .unwrap_or_default(),
+        ),
     ]
 }
 
@@ -136,6 +147,10 @@ pub fn sample_vars(language: &str) -> Vars {
         ("year", "2016".into()),
         ("engine", "SiglusEngine".into()),
         ("vndb", "https://vndb.org/v19073".into()),
+        (
+            "erogamescape",
+            "https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game=12345".into(),
+        ),
     ]
 }
 
@@ -310,6 +325,28 @@ mod tests {
         assert_eq!(activity.small_text, "SiglusEngine");
         assert_eq!(activity.start, Some(6_400));
         assert_eq!(activity.buttons, vec![("VNDB".to_string(), "https://vndb.org/v19073".to_string())]);
+    }
+
+    #[test]
+    fn erogamescape_variable_can_be_used_as_a_custom_button_url() {
+        let custom = serde_json::json!({
+            "buttons": [{ "label": "ErogameScape", "url": "{erogamescape}" }],
+        });
+        let mut activity = Activity::default();
+        let snap = Snapshot {
+            erogamescape_id: Some(12345),
+            ..Default::default()
+        };
+        let vars = vars(&snap, &Map::new(), false, "en");
+        apply(&mut activity, &custom, &vars, 0, 0, 10_000);
+        assert_eq!(
+            activity.buttons,
+            vec![(
+                "ErogameScape".to_string(),
+                "https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game=12345"
+                    .to_string()
+            )]
+        );
     }
 
     #[test]

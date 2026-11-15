@@ -3,9 +3,10 @@
 
 mod config;
 mod discord;
-mod engine;
 mod emulators;
+mod engine;
 mod engines;
+mod erogamescape;
 mod presence;
 mod sandboxie;
 mod state;
@@ -216,8 +217,11 @@ fn main() {
             commands::app::play_shutter,
             commands::app::quit,
             commands::library::get_library,
+            commands::library::get_library_brands,
             commands::library::get_game,
             commands::library::show_game_in_sandboxie,
+            commands::library::search_erogamescape,
+            commands::library::confirm_erogamescape,
             commands::library::merge_games,
             commands::library::vn_length,
             commands::library::update_game,
@@ -239,6 +243,7 @@ fn main() {
             commands::library::get_vndb_labels,
             commands::library::get_vndb_list,
             commands::covers::search_vndb,
+            commands::covers::vndb_alt_title,
             commands::covers::release_covers,
             commands::covers::set_game_vn,
             commands::covers::set_release_cover,

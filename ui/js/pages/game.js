@@ -51,6 +51,8 @@ const TEMPLATE = `
         <h2 data-id="name"></h2>
         <button class="path" data-id="path" title="Show in folder"></button>
         <div class="row" data-id="vndb"></div>
+        <div class="row" data-id="erogamescape"></div>
+        <div class="row" data-id="brand"></div>
         <button class="link" data-id="change-cover">Change VN / cover…</button>
       </div>
     </div>
@@ -203,6 +205,7 @@ let guide = null;
 let guideFor = "";
 let lastScroll = null;
 let translating = false;
+let brandDetailsPromise = null;
 
 const part = (id) => $(`[data-id="${id}"]`, root);
 
@@ -274,6 +277,8 @@ async function load() {
   setCover(part("cover"), { path: game.cover, nsfw: entry.cover_nsfw, label: game.name });
 
   renderVndb(entry);
+  renderErogameScape(entry);
+  renderBrand(entry);
   renderStatus(entry);
   renderPrivacy(entry.privacy || "full");
   renderVote(entry);
@@ -356,6 +361,76 @@ function renderVndb(entry) {
       ),
     );
   }
+}
+
+function renderErogameScape(entry) {
+  const box = part("erogamescape");
+  const id = entry.erogamescape_id;
+  if (!id && id !== 0) {
+    box.replaceChildren(
+      el(
+        "button",
+        {
+          class: "btn secondary small",
+          onclick: () => show("cover", { key, back: "game", tab: "erogamescape" }),
+        },
+        t("ErogameScape ID not confirmed"),
+      ),
+    );
+    return;
+  }
+  box.replaceChildren(
+    el(
+      "button",
+      {
+        class: "btn secondary small",
+        onclick: () =>
+          call("open_url", {
+            url: `https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game=${id}`,
+          }),
+      },
+      t("ErogameScape ID {id}", { id }),
+    ),
+  );
+}
+
+function renderBrand(entry) {
+  const box = part("brand");
+  const brandId = entry.erogamescape_brand_id;
+  if (brandId === undefined || brandId === null) {
+    box.replaceChildren();
+    return;
+  }
+
+  const name = el(
+    "button",
+    {
+      class: "link",
+      onclick: () => show("library", { filterBrandId: brandId }),
+    },
+    t("Brand {id}", { id: brandId }),
+  );
+  box.replaceChildren(el("span", { class: "muted small-text" }, t("Brand")), name);
+
+  if (!brandDetailsPromise) {
+    brandDetailsPromise = call("get_library_brands")
+      .then((brands) => new Map(brands.map((brand) => [String(brand.id), brand])))
+      .catch((error) => {
+        brandDetailsPromise = null;
+        throw error;
+      });
+  }
+  brandDetailsPromise
+    .then((brands) => {
+      if (game?.entry?.erogamescape_brand_id !== brandId) {
+        return;
+      }
+      const brandName = brands.get(String(brandId))?.name;
+      if (brandName) {
+        name.textContent = brandName;
+      }
+    })
+    .catch(() => {});
 }
 
 async function confirmMatch() {

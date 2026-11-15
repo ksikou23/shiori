@@ -20,6 +20,7 @@ const TEMPLATE = `
     <div class="tabs" data-id="tabs">
       <button data-tab="vndb">Search VNDB</button>
       <button data-tab="url">Image link</button>
+      <button data-tab="erogamescape">Search ErogameScape</button>
     </div>
 
     <div data-tab-body="vndb">
@@ -45,12 +46,31 @@ const TEMPLATE = `
         <div class="hint-text" data-id="url-status"></div>
       </div>
     </div>
+
+    <div data-tab-body="erogamescape" hidden>
+      <div class="row" data-id="erogamescape-current" style="margin: 14px 0"></div>
+      <form class="row" data-id="erogamescape-search-form" style="margin: 0 0 6px">
+        <input
+          type="search"
+          class="wide"
+          data-id="erogamescape-query"
+          placeholder="Game title"
+        />
+        <button class="btn" data-id="erogamescape-search-button" type="submit">Search</button>
+      </form>
+      <div class="hint-text" data-id="erogamescape-search-status"></div>
+      <div class="vn-results" data-id="erogamescape-results"></div>
+    </div>
   </div>
 `;
 
 let root;
 let key = "";
 let backTo = "home";
+let searchErogamescapeAfterVn = false;
+let gameEntry = {};
+let gameName = "";
+let erogamescapeSearchVersion = 0;
 
 const part = (id) => $(`[data-id="${id}"]`, root);
 
@@ -60,12 +80,22 @@ function build(container) {
 
   part("back").onclick = goBack;
   for (const tab of root.querySelectorAll("[data-tab]")) {
-    tab.onclick = () => openTab(tab.dataset.tab);
+    tab.onclick = () => {
+      openTab(tab.dataset.tab);
+      if (tab.dataset.tab === "erogamescape") {
+        searchErogameScape(true);
+      }
+    };
   }
 
   part("search-form").onsubmit = (event) => {
     event.preventDefault();
     search();
+  };
+
+  part("erogamescape-search-form").onsubmit = (event) => {
+    event.preventDefault();
+    searchErogameScape();
   };
 
   part("url-show").onclick = previewUrl;
@@ -78,20 +108,35 @@ function build(container) {
 
 }
 
-async function showPage({ key: wanted, back = "home" }) {
+async function showPage({
+  key: wanted,
+  back = "home",
+  tab = "vndb",
+  searchErogamescapeAfterVn: searchAfterVn = false,
+}) {
   key = wanted;
   backTo = back;
+  searchErogamescapeAfterVn = searchAfterVn;
 
   const game = await call("get_game", { key });
+  gameEntry = game.entry;
+  gameName = game.name;
   part("title").textContent = t("VN & cover — {name}", { name: game.name });
 
-  openTab("vndb");
+  const selectedTab = searchAfterVn ? "vndb" : tab;
+  openTab(selectedTab);
 
   part("query").value = game.name;
+  part("erogamescape-query").value = game.name;
   part("url").value = "";
   setCover(part("url-preview"));
   part("url-status").textContent = "";
-  search();
+  renderErogameScape(game.entry);
+  if (selectedTab === "erogamescape") {
+    await searchErogameScape(true);
+  } else {
+    search();
+  }
 }
 
 function goBack() {
@@ -128,6 +173,21 @@ async function done(message) {
   goBack();
 }
 
+async function finishVnSelection(message) {
+  if (!searchErogamescapeAfterVn) {
+    done(message);
+    return;
+  }
+  toast(message);
+  const game = await call("get_game", { key });
+  gameEntry = game.entry;
+  gameName = game.name;
+  part("erogamescape-query").value = game.name;
+  renderErogameScape(game.entry);
+  openTab("erogamescape");
+  await searchErogameScape(true);
+}
+
 async function search() {
   const query = part("query").value.trim();
   if (!query) {
@@ -149,6 +209,228 @@ async function search() {
     ? plural(results.length, "result")
     : t("No results — try the original (Japanese) or a shorter title.");
   part("results").replaceChildren(...results.map(resultRow));
+}
+
+function renderErogameScape(entry) {
+  const box = part("erogamescape-current");
+  const id = entry.erogamescape_id;
+  if (id === undefined || id === null || id === "") {
+    box.replaceChildren(el("span", { class: "muted small-text" }, t("No ErogameScape ID registered.")));
+    return;
+  }
+
+  box.replaceChildren(
+    el(
+      "button",
+      {
+        class: "btn secondary small",
+        onclick: () =>
+          call("open_url", {
+            url: `https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game=${id}`,
+          }),
+      },
+      t("ErogameScape ID {id}", { id }),
+    ),
+    el(
+      "button",
+      { class: "btn danger small", onclick: removeErogameScape },
+      t("Remove ErogameScape ID"),
+    ),
+  );
+}
+
+async function removeErogameScape() {
+  const targetKey = key;
+  try {
+    await call("update_game", {
+      key: targetKey,
+      fields: { erogamescape_id: null },
+    });
+    if (targetKey !== key) {
+      return;
+    }
+    delete gameEntry.erogamescape_id;
+    renderErogameScape(gameEntry);
+    for (const result of part("erogamescape-results").querySelectorAll('[aria-pressed="true"]')) {
+      result.classList.remove("btn");
+      result.classList.add("btn", "secondary");
+      result.setAttribute("aria-pressed", "false");
+    }
+    toast("ErogameScape ID removed");
+  } catch (error) {
+    part("erogamescape-search-status").textContent = String(error);
+  }
+}
+
+async function searchErogameScape(useVndbAltTitle = false) {
+  const targetKey = key;
+  const searchVersion = ++erogamescapeSearchVersion;
+  const queryInput = part("erogamescape-query");
+  const status = part("erogamescape-search-status");
+  const results = part("erogamescape-results");
+  const searchButton = part("erogamescape-search-button");
+  searchButton.disabled = true;
+  results.replaceChildren();
+
+  try {
+    const vnId = gameEntry.vndb_id || gameEntry.matched_vndb_id;
+    if (useVndbAltTitle && vnId && queryInput.value.trim() === gameName) {
+      status.textContent = t("Loading VNDB alternate title…");
+      try {
+        const altTitle = await call("vndb_alt_title", { vnId });
+        if (targetKey !== key || searchVersion !== erogamescapeSearchVersion) {
+          return;
+        }
+        if (altTitle && queryInput.value.trim() === gameName) {
+          queryInput.value = altTitle;
+        }
+      } catch (error) {
+        if (targetKey !== key || searchVersion !== erogamescapeSearchVersion) {
+          return;
+        }
+        status.textContent = String(error);
+      }
+    }
+
+    const query = queryInput.value.trim();
+    if (!query) {
+      status.textContent = t("Enter a game title.");
+      return;
+    }
+
+    status.textContent = t("Searching ErogameScape…");
+    const matches = await call("search_erogamescape", { query });
+    if (targetKey !== key || searchVersion !== erogamescapeSearchVersion) {
+      return;
+    }
+    if (!matches.length) {
+      status.textContent = t("No ErogameScape matches found.");
+      return;
+    }
+
+    status.textContent = plural(matches.length, "result");
+    let confirmationPending = false;
+    results.replaceChildren(
+      ...matches.map((match) => {
+        const isCurrent =
+          gameEntry.erogamescape_id !== undefined &&
+          gameEntry.erogamescape_id !== null &&
+          String(match.id) === String(gameEntry.erogamescape_id);
+        return el(
+          "div",
+          { class: "row", style: { flexWrap: "nowrap" } },
+          el(
+            "button",
+            {
+              class: isCurrent ? "btn" : "btn secondary",
+              type: "button",
+              "aria-pressed": String(isCurrent),
+              style: {
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "stretch",
+                gap: "4px",
+                textAlign: "left",
+                whiteSpace: "normal",
+                flex: "1",
+                minWidth: "0",
+              },
+              onclick: async () => {
+                if (
+                  targetKey !== key ||
+                  searchVersion !== erogamescapeSearchVersion ||
+                  confirmationPending
+                ) {
+                  return;
+                }
+                confirmationPending = true;
+                for (const button of results.querySelectorAll("button")) {
+                  button.disabled = true;
+                }
+                try {
+                  status.textContent = t("Fetching ErogameScape details…");
+                  const details = await call("confirm_erogamescape", {
+                    key: targetKey,
+                    id: Number(match.id),
+                  });
+                  if (targetKey !== key || searchVersion !== erogamescapeSearchVersion) {
+                    return;
+                  }
+                  Object.assign(gameEntry, details);
+                  renderErogameScape(gameEntry);
+                  await done("ErogameScape match saved");
+                } catch (error) {
+                  status.textContent = String(error);
+                } finally {
+                  confirmationPending = false;
+                  if (targetKey === key && searchVersion === erogamescapeSearchVersion) {
+                    for (const button of results.querySelectorAll("button")) {
+                      button.disabled = false;
+                    }
+                  }
+                }
+              },
+            },
+            el(
+              "span",
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-start",
+                  gap: "8px",
+                },
+              },
+              el("span", { style: { minWidth: "0", overflowWrap: "anywhere" } }, match.title),
+              match.label &&
+                el(
+                  "span",
+                  {
+                    class: "chip quiet",
+                    style: { flexShrink: "0", fontSize: "11px", padding: "2px 8px" },
+                  },
+                  match.label,
+                ),
+            ),
+            el(
+              "span",
+              {
+                style: {
+                  fontSize: "12px",
+                  fontWeight: "400",
+                  opacity: "0.8",
+                  overflowWrap: "anywhere",
+                },
+              },
+              [match.brand, match.release_date, `ID ${match.id}`]
+                .filter(Boolean)
+                .join(" · "),
+            ),
+          ),
+          el(
+            "button",
+            {
+              class: "btn secondary small",
+              type: "button",
+              onclick: () =>
+                call("open_url", {
+                  url: `https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game=${match.id}`,
+                }),
+            },
+            t("View details"),
+          ),
+        );
+      }),
+    );
+  } catch (error) {
+    if (targetKey === key && searchVersion === erogamescapeSearchVersion) {
+      status.textContent = String(error);
+    }
+  } finally {
+    if (searchVersion === erogamescapeSearchVersion) {
+      searchButton.disabled = false;
+    }
+  }
 }
 
 function rating(value) {
@@ -194,8 +476,14 @@ async function useVn(vn) {
   if (!(await okToUseNsfw(vn.nsfw))) {
     return;
   }
-  await call("set_game_vn", { key, vnId: vn.id, title: vn.title });
-  done(t("Now using {title}", { title: vn.title }));
+  await call("set_game_vn", {
+    key,
+    vnId: vn.id,
+    title: vn.title,
+    altTitle: vn.alt_title || "",
+    aliases: vn.aliases || [],
+  });
+  await finishVnSelection(t("Now using {title}", { title: vn.title }));
 }
 
 async function releaseCovers(vn) {
@@ -242,8 +530,15 @@ async function releaseCovers(vn) {
           return;
         }
         closeDialog(null);
-        await call("set_release_cover", { key, vnId: vn.id, title: vn.title, url: cover.url });
-        done("Cover changed");
+        await call("set_release_cover", {
+          key,
+          vnId: vn.id,
+          title: vn.title,
+          altTitle: vn.alt_title || "",
+          aliases: vn.aliases || [],
+          url: cover.url,
+        });
+        await finishVnSelection("Cover changed");
       };
 
       return el(

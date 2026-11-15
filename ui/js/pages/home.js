@@ -39,6 +39,7 @@ const TEMPLATE = `
         <div class="row">
           <button class="btn secondary" data-id="change-cover">Change VN / cover…</button>
           <button class="btn secondary" data-id="vndb" hidden>VNDB page</button>
+          <button class="btn secondary" data-id="erogamescape" hidden>ErogameScape page</button>
           <button class="btn secondary" data-id="open-game">Library page</button>
         </div>
       </div>
@@ -159,6 +160,12 @@ function renderSnapshot(snap) {
   const vn = snap.vn;
   part("vndb").hidden = !vn;
   part("vndb").onclick = () => call("open_url", { url: `https://vndb.org/${vn.id}` });
+  const erogamescapeId = snap.erogamescape_id;
+  part("erogamescape").hidden = erogamescapeId === undefined || erogamescapeId === null;
+  part("erogamescape").onclick = () =>
+    call("open_url", {
+      url: `https://erogamescape.dyndns.org/~ap2/ero/toukei_kaiseki/game.php?game=${erogamescapeId}`,
+    });
 
   renderActivity(snap);
 }
