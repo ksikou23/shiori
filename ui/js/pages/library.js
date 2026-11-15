@@ -257,7 +257,13 @@ function render() {
   const filter = part("filter").value.trim().toLowerCase();
   const status = part("status").value;
   const shown = games
-    .filter((game) => !filter || game.name.toLowerCase().includes(filter))
+    .filter(
+      (game) =>
+        !filter ||
+        [game.name, ...(game.search_names || [])].some((name) =>
+          String(name || "").toLowerCase().includes(filter),
+        ),
+    )
     .filter((game) => !status || game.status === status)
     .sort(SORTERS[sort]);
   if (reverse) {

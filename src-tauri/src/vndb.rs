@@ -292,6 +292,20 @@ impl Vndb {
         Ok(Some(VnResult::from_api(&first)))
     }
 
+    pub fn cached(&self, id: &str) -> Option<VnResult> {
+        let id = vn_id(id);
+        if !id
+            .strip_prefix('v')
+            .is_some_and(|digits| !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
+        {
+            return None;
+        }
+        let raw = fs::read_to_string(self.cache_dir.join(format!("id_{id}.json")))
+            .ok()
+            .and_then(|contents| serde_json::from_str(&contents).ok())?;
+        has_length(&raw).then(|| VnResult::from_api(&raw))
+    }
+
     pub fn release_dates(&self, ids: &[String]) -> Result<Vec<(String, String)>, String> {
         let mut out = Vec::new();
         for chunk in ids.chunks(100) {

@@ -460,7 +460,13 @@ async function useVn(vn) {
   if (!(await okToUseNsfw(vn.nsfw))) {
     return;
   }
-  await call("set_game_vn", { key, vnId: vn.id, title: vn.title, aliases: vn.aliases || [] });
+  await call("set_game_vn", {
+    key,
+    vnId: vn.id,
+    title: vn.title,
+    altTitle: vn.alt_title || "",
+    aliases: vn.aliases || [],
+  });
   await finishVnSelection(t("Now using {title}", { title: vn.title }));
 }
 
@@ -512,6 +518,7 @@ async function releaseCovers(vn) {
           key,
           vnId: vn.id,
           title: vn.title,
+          altTitle: vn.alt_title || "",
           aliases: vn.aliases || [],
           url: cover.url,
         });

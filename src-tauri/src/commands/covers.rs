@@ -63,6 +63,7 @@ pub async fn set_game_vn(
     key: String,
     vn_id: String,
     title: String,
+    alt_title: String,
     aliases: Vec<String>,
 ) -> Result<(), String> {
     let shared = Arc::clone(&shared);
@@ -75,6 +76,7 @@ pub async fn set_game_vn(
             ("cover_value", &vn_id),
         ];
         let mut game_fields = fields(&pairs);
+        game_fields.insert("vndb_alttitle".into(), json!(alt_title));
         game_fields.insert("vndb_aliases".into(), json!(aliases));
         apply(&shared, &key, game_fields);
         Ok(())
@@ -88,6 +90,7 @@ pub async fn set_release_cover(
     key: String,
     vn_id: String,
     title: String,
+    alt_title: String,
     aliases: Vec<String>,
     url: String,
 ) -> Result<(), String> {
@@ -101,6 +104,7 @@ pub async fn set_release_cover(
             ("cover_value", &url),
         ];
         let mut game_fields = fields(&pairs);
+        game_fields.insert("vndb_alttitle".into(), json!(alt_title));
         game_fields.insert("vndb_aliases".into(), json!(aliases));
         apply(&shared, &key, game_fields);
         Ok(())

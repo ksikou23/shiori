@@ -35,6 +35,7 @@ async function open() {
   }));
   const games = (await invoke("get_library").catch(() => [])).map((game) => ({
     label: game.name,
+    searchNames: game.search_names || [],
     hint: "VN",
     go: () => show("game", { key: game.key }),
   }));
@@ -44,7 +45,9 @@ async function open() {
 
   const render = () => {
     const query = input.value.trim().toLowerCase();
-    results = items.filter((item) => item.label.toLowerCase().includes(query)).slice(0, 12);
+    results = items
+      .filter((item) => [item.label, ...(item.searchNames || [])].some((name) => name.toLowerCase().includes(query)))
+      .slice(0, 12);
     selected = Math.min(selected, Math.max(0, results.length - 1));
     list.replaceChildren(
       ...results.map((item, i) => {

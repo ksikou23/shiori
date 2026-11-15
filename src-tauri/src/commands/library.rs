@@ -12,6 +12,7 @@ use crate::shell;
 use crate::state::{Cmd, Shared};
 use crate::vndb::VnResult;
 use crate::vndb_list;
+use wana_kana::ConvertJapanese;
 
 fn text(entry: &Entry, field: &str) -> String {
     entry
@@ -19,6 +20,140 @@ fn text(entry: &Entry, field: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string()
+}
+
+fn hiragana_variant(value: &str) -> String {
+    value.to_hiragana()
+}
+
+fn romaji_variant(value: &str) -> String {
+    value.to_romaji()
+}
+
+fn kunrei_variant(value: &str) -> String {
+    let mut result = String::new();
+    let mut kana_run = String::new();
+
+    for ch in value.chars() {
+        if matches!(ch as u32, 0x3041..=0x30ff | 0x31f0..=0x31ff | 0xff66..=0xff9f) {
+            kana_run.push(ch);
+        } else {
+            if !kana_run.is_empty() {
+                result.push_str(&kunrei_romaji(&kana_run));
+                kana_run.clear();
+            }
+            result.push(ch);
+        }
+    }
+
+    if !kana_run.is_empty() {
+        result.push_str(&kunrei_romaji(&kana_run));
+    }
+    result
+}
+
+fn kunrei_romaji(value: &str) -> String {
+    let exceptions = [
+        ("っぢゃ", '\u{e005}', "ddya"),
+        ("っぢゅ", '\u{e006}', "ddyu"),
+        ("っぢょ", '\u{e007}', "ddyo"),
+        ("っぢ", '\u{e008}', "ddi"),
+        ("っづ", '\u{e009}', "ddu"),
+        ("ぢゃ", '\u{e000}', "dya"),
+        ("ぢゅ", '\u{e001}', "dyu"),
+        ("ぢょ", '\u{e002}', "dyo"),
+        ("ぢ", '\u{e003}', "di"),
+        ("づ", '\u{e004}', "du"),
+    ];
+    let mut hiragana = value.to_hiragana();
+    for (kana, marker, _) in exceptions {
+        hiragana = hiragana.replace(kana, &marker.to_string());
+    }
+
+    let mut result = kunrei_from_hepburn(&hiragana.to_romaji());
+    for (_, marker, romanization) in exceptions {
+        result = result.replace(marker, romanization);
+    }
+    result
+}
+
+fn kunrei_from_hepburn(value: &str) -> String {
+    [
+        ("sha", "sya"),
+        ("shu", "syu"),
+        ("sho", "syo"),
+        ("cha", "tya"),
+        ("chu", "tyu"),
+        ("cho", "tyo"),
+        ("ja", "zya"),
+        ("ju", "zyu"),
+        ("jo", "zyo"),
+        ("shi", "si"),
+        ("chi", "ti"),
+        ("tsu", "tu"),
+        ("fu", "hu"),
+        ("ji", "zi"),
+    ]
+    .into_iter()
+    .fold(value.to_string(), |result, (hepburn, kunrei)| {
+        result.replace(hepburn, kunrei)
+    })
+}
+
+fn search_name_forms(names: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut search_names = Vec::new();
+    for name in names.into_iter().filter(|name| !name.trim().is_empty()) {
+        let hiragana = hiragana_variant(&name);
+        let romaji = romaji_variant(&name);
+        let kunrei = kunrei_variant(&name);
+        let has_hiragana_variant = hiragana != name;
+        let has_romaji_variant = romaji != hiragana;
+        let has_kunrei_variant = kunrei != name;
+        if !search_names.contains(&name) {
+            search_names.push(name);
+        }
+        if has_hiragana_variant && !search_names.contains(&hiragana) {
+            search_names.push(hiragana);
+        }
+        if has_romaji_variant && !search_names.contains(&romaji) {
+            search_names.push(romaji);
+        }
+        if has_kunrei_variant && !search_names.contains(&kunrei) {
+            search_names.push(kunrei);
+        }
+    }
+    search_names
+}
+
+fn library_search_names(entry: &Entry) -> Vec<String> {
+    let names = [
+        "title",
+        "name",
+        "vndb_title",
+        "vndb_alttitle",
+        "erogamescape_name",
+        "erogamescape_furigana",
+    ]
+    .into_iter()
+    .map(|field| text(entry, field))
+    .chain(
+        entry
+            .get("vndb_aliases")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string),
+    );
+    search_name_forms(names)
+}
+
+fn vndb_search_names(vn: &VnResult) -> Vec<String> {
+    search_name_forms(
+        [vn.title.clone(), vn.alt_title.clone()]
+            .into_iter()
+            .chain(vn.aliases.iter().cloned()),
+    )
 }
 
 fn valid_erogamescape_update(value: &Value) -> bool {
@@ -60,20 +195,39 @@ fn cover_of(cfg: &Config, entry: &Entry) -> Option<String> {
 
 #[tauri::command(async)]
 pub fn get_library(shared: SharedState) -> Vec<Value> {
-    let cfg = shared.config.lock().unwrap();
-    let title_priority = cfg.display_title_priority();
+    let (title_priority, games) = {
+        let cfg = shared.config.lock().unwrap();
+        let title_priority = cfg.display_title_priority();
+        let games = visible_games(&cfg)
+            .into_iter()
+            .map(|(key, entry)| {
+                let cover = cover_of(&cfg, &entry);
+                (key, entry, cover)
+            })
+            .collect::<Vec<_>>();
+        (title_priority, games)
+    };
 
-    visible_games(&cfg)
+    games
         .into_iter()
-        .map(|(key, entry)| {
+        .map(|(key, entry, cover)| {
             let vn_id = [text(&entry, "vndb_id"), text(&entry, "matched_vndb_id")]
                 .into_iter()
                 .find(|id| !id.is_empty())
                 .unwrap_or_default();
+            let mut search_names = library_search_names(&entry);
+            if let Some(vn) = shared.vndb.cached(&vn_id) {
+                for name in vndb_search_names(&vn) {
+                    if !search_names.contains(&name) {
+                        search_names.push(name);
+                    }
+                }
+            }
 
             json!({
                 "key": key,
                 "name": screenshots::display_name(&key, &entry, &title_priority),
+                "search_names": search_names,
                 "status": text(&entry, "status"),
                 "playtime": entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0),
                 "daily": entry.get("daily").cloned().unwrap_or(json!({})),
@@ -85,7 +239,7 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
                     && launcher::launch_exe(&entry).is_empty(),
                 "released": if text(&entry, "released_vn") == vn_id { text(&entry, "released") } else { String::new() },
                 "vndb_id": vn_id,
-                "cover": cover_of(&cfg, &entry),
+                "cover": cover,
             })
         })
         .collect()
@@ -550,8 +704,56 @@ pub async fn get_wishlist(shared: SharedState<'_>) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::valid_erogamescape_update;
-    use serde_json::json;
+    use super::{
+        kunrei_variant, library_search_names, romaji_variant, search_name_forms,
+        valid_erogamescape_update,
+    };
+    use serde_json::{json, Map};
+
+    #[test]
+    fn library_filter_names_include_all_sources_and_hiragana_furigana() {
+        let entry = Map::from_iter([
+            ("title".into(), json!("VNDB title")),
+            ("vndb_title".into(), json!("VNDB title")),
+            ("vndb_alttitle".into(), json!("VNDB alternate")),
+            ("vndb_aliases".into(), json!(["VNDB alias"])),
+            ("erogamescape_name".into(), json!("批評空間タイトル")),
+            ("erogamescape_furigana".into(), json!("ヒヒョウクウカン")),
+        ]);
+        let names = library_search_names(&entry);
+
+        for expected in [
+            "VNDB title",
+            "VNDB alternate",
+            "VNDB alias",
+            "批評空間タイトル",
+            "ヒヒョウクウカン",
+            "ひひょうくうかん",
+            "hihyoukuukan",
+        ] {
+            assert!(names.iter().any(|name| name == expected), "{expected}");
+        }
+    }
+
+    #[test]
+    fn furigana_romaji_supports_digraphs_gemination_and_long_vowels() {
+        assert_eq!(romaji_variant("ハツユキサクラ"), "hatsuyukisakura");
+        assert_eq!(romaji_variant("マッチャ"), "matcha");
+        assert_eq!(romaji_variant("ゲーム"), "geemu");
+    }
+
+    #[test]
+    fn furigana_search_supports_hepburn_and_kunrei_romanization() {
+        let names = search_name_forms(["シンブン チュウ".to_string()]);
+
+        assert!(names.iter().any(|name| name == "shinbun chuu"));
+        assert!(names.iter().any(|name| name == "sinbun tyuu"));
+        assert_eq!(kunrei_variant("Shinシン"), "Shinsin");
+        assert_eq!(kunrei_variant("ぢづ"), "didu");
+        assert_eq!(kunrei_variant("ヂャヂュヂョ"), "dyadyudyo");
+        assert_eq!(kunrei_variant("っぢゃっづ"), "ddyaddu");
+        assert_eq!(kunrei_variant("ﾁﾞ"), "di");
+    }
 
     #[test]
     fn erogamescape_ids_must_be_confirmed_and_can_only_be_removed_here() {
