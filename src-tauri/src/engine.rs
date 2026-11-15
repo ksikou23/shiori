@@ -927,6 +927,9 @@ fn learned_fields(
         if text(entry, "vndb_id").is_empty() && text(entry, "matched_vndb_id") != vn.id {
             learned.insert("matched_vndb_id".into(), json!(vn.id));
         }
+        if text(entry, "vndb_alttitle") != vn.alt_title {
+            learned.insert("vndb_alttitle".into(), json!(vn.alt_title));
+        }
     }
     if !entry.contains_key("status") {
         learned.insert("status".into(), json!("playing"));
@@ -937,4 +940,29 @@ fn learned_fields(
         learned.insert("cover_nsfw".into(), json!(cover.nsfw));
     }
     learned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{learned_fields, Cover};
+    use crate::vndb::VnResult;
+    use serde_json::{Map, Value};
+
+    #[test]
+    fn learned_vndb_alttitle_is_saved_under_its_yaml_key() {
+        let vn = VnResult {
+            id: "v1".into(),
+            alt_title: "Alternate title".into(),
+            ..Default::default()
+        };
+        let learned = learned_fields(&Map::new(), "", Some(&vn), &Cover::default());
+
+        assert_eq!(
+            learned.get("vndb_alttitle"),
+            Some(&Value::from("Alternate title"))
+        );
+        assert!(!learned.contains_key("alt_title"));
+        let yaml = serde_yaml::to_string(&learned).unwrap();
+        assert!(yaml.contains("vndb_alttitle: Alternate title"));
+    }
 }
