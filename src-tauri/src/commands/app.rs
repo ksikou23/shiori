@@ -40,6 +40,16 @@ pub fn update_settings(
     app: AppHandle,
     mut changes: Map<String, Value>,
 ) -> Result<(), String> {
+    if let Some(value) = changes.get("sandboxie_default_box") {
+        let Some(box_name) = value.as_str().map(str::trim) else {
+            return Err("Sandboxie default box name must be a string.".into());
+        };
+        if box_name.is_empty() {
+            return Err("Sandboxie default box name must not be empty.".into());
+        }
+        changes.insert("sandboxie_default_box".into(), json!(box_name));
+    }
+
     for name in ["screenshot_hotkey", "clip_hotkey", "clip_replay_hotkey", "walkthrough_hotkey"] {
         if let Some(Value::String(key)) = changes.get(name) {
             let normalized = hotkey::normalize(key);

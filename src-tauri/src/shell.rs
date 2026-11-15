@@ -34,6 +34,15 @@ pub fn start_program(program: &Path, params: &str, cwd: &Path) -> Result<(), Str
     shell_execute(&program.to_string_lossy(), params, Some(cwd))
 }
 
+pub fn start_program_args(program: &Path, args: &[String], cwd: &Path) -> Result<(), String> {
+    Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("couldn't start {}: {error}", program.display()))
+}
+
 fn shell_execute(target: &str, params: &str, cwd: Option<&Path>) -> Result<(), String> {
     let target = HSTRING::from(target);
     let params = HSTRING::from(params);

@@ -423,6 +423,16 @@
   gap: 14px;
 }
 
+.seg[data-id="launcher"] {
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.seg[data-id="launcher"] button {
+  flex-shrink: 0;
+}
+
 .col {
   display: flex;
   flex-direction: column;

@@ -6,6 +6,7 @@ export const LAUNCHERS = {
   "": { label: "Normal" },
   le: { label: "Locale Emulator", exe: "LEProc.exe" },
   ntlea: { label: "NTLEA", exe: "ntleas.exe" },
+  sandboxie: { label: "Sandboxie" },
 };
 
 export async function locateGame(key) {

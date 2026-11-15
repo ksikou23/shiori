@@ -14,7 +14,7 @@ import {
 import { invoke, fileUrl, listen } from "../tauri.js";
 import { register, show } from "../router.js";
 import { store, subscribe, update } from "../store.js";
-import { ask, call, openDialog, segmented, setCover, toast } from "../ui.js";
+import { ask, call, openDialog, segmented, setCover, toast, toggle } from "../ui.js";
 import { drawChart } from "../components/chart.js";
 import {
   SOURCES,
@@ -106,9 +106,20 @@ const TEMPLATE = `
             <button data-v="">Normal</button>
             <button data-v="le">Locale Emulator</button>
             <button data-v="ntlea">NTLEA</button>
+            <button data-v="sandboxie">Sandboxie</button>
           </div>
         </div>
         <div class="hint-text" data-id="launcher-note"></div>
+        <div data-id="sandboxie-use-default-box" hidden></div>
+        <div class="hint-text" data-id="sandboxie-box-note" hidden></div>
+        <div class="field" data-id="sandboxie-box-field" hidden>
+          <b data-id="sandboxie-box-label"></b>
+          <div class="row grow">
+            <input class="wide" type="text" data-id="sandboxie-box-input" spellcheck="false" />
+          </div>
+        </div>
+        <div data-id="sandboxie-auto-update-box" hidden></div>
+        <button class="btn secondary small" data-id="sandboxie-location" hidden></button>
       </div>
 
       <div class="card">
@@ -254,6 +265,12 @@ async function load() {
   part("path").textContent = exe || t("Executable not located yet");
   part("path").disabled = !exe;
   part("path").onclick = () => call("show_in_folder", { path: exe });
+  part("sandboxie-location").hidden = entry.launcher !== "sandboxie";
+  part("sandboxie-location").textContent = t("Show game folder");
+  part("sandboxie-location").title = t(
+    "Open the game location in Explorer inside Sandboxie.",
+  );
+  part("sandboxie-location").onclick = () => call("show_game_in_sandboxie", { key });
   setCover(part("cover"), { path: game.cover, nsfw: entry.cover_nsfw, label: game.name });
 
   renderVndb(entry);
@@ -430,21 +447,136 @@ async function saveVote() {
 function renderLauncher(entry) {
   const launcher = entry.launcher in LAUNCHERS ? entry.launcher : "";
 
-  segmented(part("launcher"), launcher, async (value) => {
-    if (value && !toolIsSet(value) && !(await locateTool(value))) {
+  const hasCustomBox = typeof entry.sandboxie_box === "string" && !!entry.sandboxie_box.trim();
+  let usingDefaultBox =
+    entry.sandboxie_use_default_box === true ||
+    (entry.sandboxie_use_default_box !== false &&
+      !hasCustomBox &&
+      entry.sandboxie_auto_update_box === false);
+
+  const defaultBoxContainer = part("sandboxie-use-default-box");
+  defaultBoxContainer.hidden = launcher !== "sandboxie";
+  const defaultBoxToggle = toggle(
+    t("Use default box"),
+    usingDefaultBox,
+    async (checked) => {
+      const input = defaultBoxToggle.querySelector("input");
+      input.disabled = true;
+      try {
+        await call("update_game", { key, fields: { sandboxie_use_default_box: checked } });
+      } catch (error) {
+        input.checked = usingDefaultBox;
+        input.disabled = false;
+        toast(t("Couldn't update Sandboxie box setting: {error}", { error: error?.detail || error }), {
+          error: true,
+        });
+        return;
+      }
+      usingDefaultBox = checked;
+      entry.sandboxie_use_default_box = checked;
+      input.disabled = false;
+      applyBoxMode();
+    },
+  );
+  defaultBoxContainer.replaceChildren(defaultBoxToggle);
+
+  part("sandboxie-box-field").hidden = launcher !== "sandboxie";
+  part("sandboxie-box-note").hidden = launcher !== "sandboxie";
+  const autoUpdateBoxContainer = part("sandboxie-auto-update-box");
+  autoUpdateBoxContainer.hidden = launcher !== "sandboxie";
+  const autoUpdateBox = toggle(
+    t("Automatically update box name"),
+    entry.sandboxie_auto_update_box !== false,
+    (checked) => call("update_game", { key, fields: { sandboxie_auto_update_box: checked } }),
+  );
+  autoUpdateBox.title = t("When on, Shiori follows the box detected from the running game.");
+  autoUpdateBoxContainer.replaceChildren(autoUpdateBox);
+  part("sandboxie-box-label").textContent = t("Sandboxie box");
+  const boxInput = part("sandboxie-box-input");
+  const sandboxieBoxField = part("sandboxie-box-field");
+  const sandboxieBoxNote = part("sandboxie-box-note");
+  const autoUpdateInput = autoUpdateBox.querySelector("input");
+  const disabledBoxTitle = t(
+    "Can't be changed while using the default box. Change it in Settings > General.",
+  );
+  const applyBoxMode = () => {
+    const defaultName = store.settings.sandboxie_default_box || "DefaultBox";
+    boxInput.value = usingDefaultBox ? defaultName : entry.sandboxie_box || defaultName;
+    sandboxieBoxNote.textContent = t(
+      "This game will launch inside the selected Sandboxie box.",
+    );
+    boxInput.disabled = usingDefaultBox;
+    boxInput.title = usingDefaultBox ? disabledBoxTitle : "";
+    sandboxieBoxField.classList.toggle("sandboxie-disabled", usingDefaultBox);
+    autoUpdateInput.disabled = usingDefaultBox;
+    autoUpdateBox.classList.toggle("sandboxie-disabled", usingDefaultBox);
+    autoUpdateBox.title = usingDefaultBox
+      ? t("Unavailable while using the default box.")
+      : t("When on, Shiori follows the box detected from the running game.");
+  };
+  applyBoxMode();
+
+  boxInput.onchange = async () => {
+    const box = boxInput.value.trim();
+    const previousBox = entry.sandboxie_box || store.settings.sandboxie_default_box || "DefaultBox";
+    if (!box) {
+      toast(t("Sandboxie box name must not be empty."), { error: true });
+      boxInput.value = previousBox;
       return;
+    }
+    if (box === previousBox) {
+      boxInput.value = box;
+      return;
+    }
+    try {
+      await call("update_game", { key, fields: { sandboxie_box: box } });
+    } catch {
+      boxInput.value = previousBox;
+      return;
+    }
+    entry.sandboxie_box = box;
+    boxInput.value = box;
+    toast(t("Sandboxie box updated."));
+  };
+  boxInput.onkeydown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      boxInput.blur();
+    }
+  };
+  segmented(part("launcher"), launcher, async (value) => {
+    if (value && value !== "sandboxie" && !toolIsSet(value) && !(await locateTool(value))) {
+      return;
+    }
+    if (entry.launcher === "sandboxie" && value !== "sandboxie") {
+      const confirmed = await ask(
+        t("Switch away from Sandboxie?"),
+        t("This may make the game run outside its sandbox and expose your system to risk. Continue?"),
+        {
+          yes: t("Go ahead"),
+          no: t("Stay in Sandboxie"),
+          danger: true,
+        },
+      );
+      if (!confirmed) {
+        return;
+      }
     }
     await call("update_game", { key, fields: { launcher: value } });
   });
 
+  const launcherNote = part("launcher-note");
+  launcherNote.hidden = launcher === "sandboxie";
   if (!launcher) {
-    part("launcher-note").textContent = t(
+    launcherNote.textContent = t(
       "For Japanese VNs with garbled text or that won't start: Play can go through Locale Emulator or NTLEA.",
     );
+  } else if (launcher === "sandboxie") {
+    launcherNote.textContent = "";
   } else if (game.tool) {
-    part("launcher-note").textContent = t("Play starts it through {tool}.", { tool: game.tool });
+    launcherNote.textContent = t("Play starts it through {tool}.", { tool: game.tool });
   } else {
-    part("launcher-note").textContent = t("{exe} can't be found anymore — Play will ask where it is.", {
+    launcherNote.textContent = t("{exe} can't be found anymore — Play will ask where it is.", {
       exe: LAUNCHERS[launcher].exe,
     });
   }

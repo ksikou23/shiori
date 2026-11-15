@@ -2,7 +2,7 @@ import { $, el, html } from "../dom.js";
 import { invoke, pickFile, pickFolder, pickSaveFile } from "../tauri.js";
 import { register, show } from "../router.js";
 import { store, subscribe, update } from "../store.js";
-import { ask, call, toast, toggle } from "../ui.js";
+import { ask, call, segmented, toast, toggle } from "../ui.js";
 import { hotkeyInput } from "../components/hotkey-input.js";
 import { renderThemeTab } from "../components/theme-tab.js";
 import { offerUpdate } from "../components/update.js";
@@ -605,6 +605,71 @@ function localeSection() {
     pathRow("locale_emulator_path", { title: "Locate LEProc.exe", filters: exe("LEProc.exe") }),
     el("div", { class: "field-label" }, "NTLEA  (ntleas.exe)"),
     pathRow("ntlea_path", { title: "Locate ntleas.exe", filters: exe("ntleas.exe") }),
+    ...sandboxieLocationSection(),
+  ];
+}
+
+function sandboxieLocationSection() {
+  const mode = store.settings.sandboxie_location_mode === "manual" ? "manual" : "auto";
+  const selector = el(
+    "div",
+    { class: "seg" },
+    el("button", { "data-v": "auto" }, t("Automatic")),
+    el("button", { "data-v": "manual" }, t("Manual")),
+  );
+  segmented(selector, mode, async (value) => {
+    if (value === "manual" && !store.settings.sandboxie_install_dir) {
+      const path = await pickFolder({ title: t("Select Sandboxie installation folder") });
+      if (!path) {
+        render();
+        return;
+      }
+      await save({ sandboxie_install_dir: path, sandboxie_location_mode: value });
+      return;
+    }
+    await save({ sandboxie_location_mode: value });
+  });
+
+  const directory = pathRow("sandboxie_install_dir", {
+    title: t("Select Sandboxie installation folder"),
+    folder: true,
+    placeholder: t("Not set"),
+  });
+  directory.hidden = mode !== "manual";
+
+  const defaultBoxInput = el("input", {
+    type: "text",
+    class: "wide",
+    value: store.settings.sandboxie_default_box || "DefaultBox",
+  });
+  defaultBoxInput.onchange = async () => {
+    const boxName = defaultBoxInput.value.trim();
+    if (!boxName) {
+      toast(t("Default Sandboxie box name must not be empty."), { error: true });
+      defaultBoxInput.value = store.settings.sandboxie_default_box || "DefaultBox";
+      return;
+    }
+    defaultBoxInput.value = boxName;
+    await save({ sandboxie_default_box: boxName });
+  };
+  const defaultBoxField = el(
+    "div",
+    { class: "field" },
+    el("span", {}, t("Default box name")),
+    defaultBoxInput,
+  );
+
+  return [
+    section(t("Sandboxie settings")),
+    hint(
+      t("Detect Sandboxie automatically from its service registration, or manually choose the folder containing Start.exe and SbieDll.dll."),
+    ),
+    el("div", { class: "field" }, el("span", {}, t("Location method")), selector),
+    directory,
+    defaultBoxField,
+    hint(
+      t("Applied to games set to use the default box and games with no box name. Change this setting on each game's page."),
+    ),
   ];
 }
 

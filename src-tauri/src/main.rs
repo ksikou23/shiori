@@ -7,6 +7,7 @@ mod engine;
 mod emulators;
 mod engines;
 mod presence;
+mod sandboxie;
 mod state;
 mod steam;
 mod title_parser;
@@ -216,6 +217,7 @@ fn main() {
             commands::app::quit,
             commands::library::get_library,
             commands::library::get_game,
+            commands::library::show_game_in_sandboxie,
             commands::library::merge_games,
             commands::library::vn_length,
             commands::library::update_game,

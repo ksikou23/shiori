@@ -173,20 +173,65 @@ fn changed(shared: &Shared, key: &str) {
 }
 
 #[tauri::command(async)]
+pub fn show_game_in_sandboxie(shared: SharedState, key: String) -> Result<(), String> {
+    let (entry, location_mode, install_path, default_box) = {
+        let config = shared.config.lock().unwrap();
+        (
+            config.game(&key),
+            config.str("sandboxie_location_mode"),
+            config.str("sandboxie_install_dir"),
+            crate::sandboxie::configured_default_box(&config.str("sandboxie_default_box")),
+        )
+    };
+    let install_dir = crate::sandboxie::configured_install_dir(&location_mode, &install_path)?;
+    launcher::show_in_sandboxie(&entry, install_dir.as_deref(), &default_box)
+}
+
+#[tauri::command(async)]
 pub fn update_game(
     shared: SharedState,
     key: String,
     fields: Map<String, Value>,
 ) -> Result<(), String> {
-    const EDITABLE: [&str; 5] = ["status", "privacy", "title", "launcher", "section"];
+    const EDITABLE: [&str; 8] = [
+        "status",
+        "privacy",
+        "title",
+        "launcher",
+        "section",
+        "sandboxie_box",
+        "sandboxie_auto_update_box",
+        "sandboxie_use_default_box",
+    ];
+    let mut fields = fields;
+    let reset_sandboxie_box = fields.get("sandboxie_box").is_some_and(Value::is_null);
 
     for (field, value) in &fields {
         if !EDITABLE.contains(&field.as_str()) {
             return Err(format!("{field} can't be edited"));
         }
+        if field == "sandboxie_box" && value.is_null() {
+            continue;
+        }
         if field == "status" && !(value == "" || STATUSES.iter().any(|s| value == *s)) {
             return Err(format!("unknown status {value}"));
         }
+        if field == "sandboxie_auto_update_box" && !value.is_boolean() {
+            return Err("sandboxie_auto_update_box must be a boolean".into());
+        }
+        if field == "sandboxie_use_default_box" && !value.is_boolean() {
+            return Err("sandboxie_use_default_box must be a boolean".into());
+        }
+    }
+
+    if let Some(value) = fields.get("sandboxie_box").filter(|value| !value.is_null()) {
+        let Some(box_name) = value.as_str().map(str::trim) else {
+            return Err("Sandboxie box name must be a string.".into());
+        };
+        if box_name.is_empty() {
+            return Err("Sandboxie box name must not be empty.".into());
+        }
+        fields.insert("sandboxie_box".into(), json!(box_name));
     }
 
     let status = fields
@@ -195,7 +240,13 @@ pub fn update_game(
         .map(str::to_string);
     let vn_id = {
         let mut cfg = shared.config.lock().unwrap();
-        cfg.set_game(&key, fields);
+        if reset_sandboxie_box {
+            cfg.remove_game_field(&key, "sandboxie_box");
+            fields.remove("sandboxie_box");
+        }
+        if !fields.is_empty() {
+            cfg.set_game(&key, fields);
+        }
         text(&cfg.game(&key), "vndb_id")
     };
 

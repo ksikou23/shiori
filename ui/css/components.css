@@ -327,6 +327,14 @@ input[type="color"] {
   cursor: pointer;
 }
 
+.sandboxie-disabled {
+  opacity: 0.5;
+}
+
+.toggle.sandboxie-disabled {
+  cursor: not-allowed;
+}
+
 .toggle input[type="checkbox"] {
   display: none;
 }

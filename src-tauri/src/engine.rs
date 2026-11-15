@@ -271,6 +271,18 @@ fn text(entry: &Map<String, Value>, field: &str) -> String {
         .to_string()
 }
 
+fn should_update_detected_box(entry: &Map<String, Value>, detected: &str) -> bool {
+    let use_default_box = entry
+        .get("sandboxie_use_default_box")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let auto_update = entry
+        .get("sandboxie_auto_update_box")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    !use_default_box && auto_update && text(entry, "sandboxie_box") != detected
+}
+
 pub fn format_playtime(seconds: i64, language: &str) -> String {
     let minutes = seconds.max(0) / 60;
     lang::tr("{h}h {mm}m", language)
@@ -423,6 +435,27 @@ impl Engine {
     }
 
     fn handle_target(&mut self, target: Target) {
+        let (location_mode, install_path) = {
+            let config = self.shared.config.lock().unwrap();
+            (
+                config.str("sandboxie_location_mode"),
+                config.str("sandboxie_install_dir"),
+            )
+        };
+        let sandboxie_box = crate::sandboxie::configured_install_dir(&location_mode, &install_path)
+            .and_then(|install_dir| {
+                crate::sandboxie::box_for_process(target.pid, install_dir.as_deref())
+            });
+        let sandboxie_box = match sandboxie_box {
+            Ok(box_name) => box_name,
+            Err(error) => {
+                eprintln!("couldn't inspect Sandboxie process {}: {error}", target.pid);
+                None
+            }
+        };
+        let sandboxie_path = sandboxie_box
+            .as_ref()
+            .and_then(|_| crate::sandboxie::path_in_box(&target.exe_path));
         let (key, emulated, no_game) = {
             let cfg = self.shared.config.lock().unwrap();
             let split = cfg.str("detection_mode") == "manual" && cfg.bool("split_by_title");
@@ -451,6 +484,25 @@ impl Engine {
                     &key,
                     Map::from_iter([("path".into(), json!(target.exe_path))]),
                 );
+            }
+            if let Some(box_name) = &sandboxie_box {
+                let entry = cfg.game(&key);
+                let mut fields = Map::new();
+                if should_update_detected_box(&entry, box_name) {
+                    fields.insert("sandboxie_box".into(), json!(box_name));
+                }
+                let launcher = text(&entry, "launcher");
+                if launcher.is_empty() {
+                    fields.insert("launcher".into(), json!(crate::launcher::SANDBOXIE));
+                }
+                if let Some(path) = &sandboxie_path {
+                    if text(&entry, "sandboxie_path") != *path {
+                        fields.insert("sandboxie_path".into(), json!(path));
+                    }
+                }
+                if !fields.is_empty() {
+                    cfg.set_game(&key, fields);
+                }
             }
             (
                 cfg.game(&key),
@@ -937,4 +989,33 @@ fn learned_fields(
         learned.insert("cover_nsfw".into(), json!(cover.nsfw));
     }
     learned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detected_box_updates_when_auto_update_is_on() {
+        let entry = Map::from_iter([("sandboxie_box".into(), Value::from("OldBox"))]);
+        assert!(should_update_detected_box(&entry, "NewBox"));
+    }
+
+    #[test]
+    fn detected_box_is_preserved_when_auto_update_is_off() {
+        let entry = Map::from_iter([
+            ("sandboxie_box".into(), Value::from("SelectedBox")),
+            ("sandboxie_auto_update_box".into(), Value::from(false)),
+        ]);
+        assert!(!should_update_detected_box(&entry, "DetectedBox"));
+    }
+
+    #[test]
+    fn detected_box_is_not_saved_when_default_box_is_selected() {
+        let entry = Map::from_iter([
+            ("sandboxie_box".into(), Value::from("SelectedBox")),
+            ("sandboxie_use_default_box".into(), Value::from(true)),
+        ]);
+        assert!(!should_update_detected_box(&entry, "DetectedBox"));
+    }
 }

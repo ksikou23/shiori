@@ -103,6 +103,9 @@ fn defaults() -> Map<String, Value> {
         "screenshot_dir": "",
         "locale_emulator_path": "",
         "ntlea_path": "",
+        "sandboxie_location_mode": "auto",
+        "sandboxie_install_dir": "",
+        "sandboxie_default_box": "DefaultBox",
     });
     match v {
         Value::Object(m) => m,
@@ -599,6 +602,16 @@ impl Config {
         self.save_game(key);
     }
 
+    pub fn remove_game_field(&mut self, key: &str, field: &str) {
+        let removed = self
+            .games
+            .get_mut(key)
+            .is_some_and(|entry| entry.remove(field).is_some());
+        if removed {
+            self.save_game(key);
+        }
+    }
+
     pub fn replace_all(
         &mut self,
         data: Map<String, Value>,
@@ -908,6 +921,25 @@ mod tests {
 
     fn add(cfg: &mut Config, key: &str, fields: Value) {
         cfg.set_game(key, fields.as_object().cloned().unwrap_or_default());
+    }
+
+    #[test]
+    fn remove_game_field_clears_only_the_requested_field() {
+        let mut cfg = library("remove-game-field");
+        add(
+            &mut cfg,
+            "game",
+            json!({"sandboxie_box": "CustomBox", "launcher": "sandboxie"}),
+        );
+
+        cfg.remove_game_field("game", "sandboxie_box");
+
+        let entry = cfg.game("game");
+        assert!(entry.get("sandboxie_box").is_none());
+        assert_eq!(
+            entry.get("launcher").and_then(Value::as_str),
+            Some("sandboxie")
+        );
     }
 
     #[test]
