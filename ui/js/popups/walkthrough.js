@@ -164,7 +164,7 @@ function render() {
         el(
           "button",
           { class: "btn small", onclick: () => mark(stepId(saved.route, next), true) },
-          "Done ✓",
+          "Done",
         ),
     ),
   );
