@@ -995,8 +995,8 @@ function blacklistTab() {
     : [el("span", { class: "muted" }, "Nothing yet.")];
 
   const input = el("input", { type: "text", class: "wide", placeholder: "osu!.exe" });
-  const add = () => {
-    let name = input.value.trim().split(/[\\/]/).pop();
+  const addName = (value) => {
+    let name = value.trim().split(/[\\/]/).pop();
     if (!name) {
       return;
     }
@@ -1006,8 +1006,41 @@ function blacklistTab() {
     if (!list.some((x) => x.toLowerCase() === name.toLowerCase())) {
       save({ blacklist_exe: [...list, name] });
     }
+  };
+  const add = () => {
+    addName(input.value);
     input.value = "";
   };
+
+  const picker = el("select", { class: "open-apps", style: { flex: "1" } }, el("option", { value: "" }, t("Pick an open app…")));
+  const fill = async () => {
+    const windows = await invoke("list_windows").catch(() => []);
+    const taken = new Set(list.map((x) => x.toLowerCase()));
+    const seen = new Set();
+    const items = [];
+    for (const win of windows) {
+      const exe = win.exe_path.split(/[\\/]/).pop();
+      const key = exe.toLowerCase();
+      if (!exe || key === "shiori.exe" || seen.has(key) || taken.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      items.push([exe, win.title]);
+    }
+    items.sort((a, b) => a[0].localeCompare(b[0]));
+    picker.replaceChildren(
+      el("option", { value: "" }, t(items.length ? "Pick an open app…" : "No other open app")),
+      ...items.map(([exe, title]) => el("option", { value: exe }, title ? `${exe}  —  ${title}` : exe)),
+    );
+  };
+  picker.onmousedown = fill;
+  picker.onfocus = fill;
+  picker.onchange = () => {
+    if (picker.value) {
+      addName(picker.value);
+    }
+  };
+  fill();
   input.onkeydown = (event) => {
     if (event.key === "Enter") {
       add();
@@ -1020,7 +1053,8 @@ function blacklistTab() {
         "Browsers, Discord, Steam, OBS… are always ignored.",
     ),
     el("div", { class: "chips", style: { margin: "8px 0 14px" } }, chips),
-    el("div", { class: "row" }, input, el("button", { class: "btn", onclick: add }, "Add")),
+    el("div", { class: "row" }, picker),
+    el("div", { class: "row", style: { marginTop: "8px" } }, input, el("button", { class: "btn", onclick: add }, "Add")),
   ];
 }
 
