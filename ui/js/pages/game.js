@@ -22,6 +22,7 @@ import {
   findWalkthrough,
   nextChoice,
   raw,
+  routeArt,
   say,
   secret,
   stepRow,
@@ -922,6 +923,7 @@ function renderGuide() {
   box.replaceChildren(
     el("div", { class: "guide-head" }, el("p", { class: "hint-text" }, guideNote(english)), sourcePicker()),
     tabs,
+    routeArt(route),
     steps,
     footer,
   );

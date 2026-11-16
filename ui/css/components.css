@@ -1039,3 +1039,27 @@ button.chip:hover,
   font-weight: 600;
   margin-bottom: 4px;
 }
+
+
+.guide-art {
+  flex: none;
+  height: 170px;
+  margin: 10px 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+
+.guide-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.guide-art.ready img {
+  opacity: 1;
+}

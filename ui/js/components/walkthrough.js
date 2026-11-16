@@ -11,6 +11,23 @@ export function raw(tag, attrs, text) {
   return node;
 }
 
+const shownArt = new Set();
+
+export function routeArt(route) {
+  if (!route?.image) {
+    return null;
+  }
+  const picture = el("img", { alt: "", draggable: "false", referrerpolicy: "no-referrer" });
+  const box = el("div", { class: `guide-art${shownArt.has(route.image) ? " ready" : ""}` }, picture);
+  picture.onload = () => {
+    shownArt.add(route.image);
+    box.classList.add("ready");
+  };
+  picture.onerror = () => box.remove();
+  picture.src = route.image;
+  return box;
+}
+
 export function secret(tag, attrs, text, hidden) {
   const node = raw(
     tag,

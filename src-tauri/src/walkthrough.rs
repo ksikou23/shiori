@@ -35,6 +35,8 @@ pub struct Step {
 pub struct Route {
     pub name: String,
     pub steps: Vec<Step>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub image: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -53,7 +55,11 @@ pub struct Saved {
     pub translated: bool,
     #[serde(default)]
     pub source: String,
+    #[serde(default)]
+    pub version: u32,
 }
+
+const SAVED_VERSION: u32 = 1;
 
 #[derive(Serialize, Deserialize)]
 struct Index {
@@ -164,6 +170,20 @@ fn attr(tag: &str, name: &str) -> Option<String> {
     let value = value.trim_start_matches(['"', '\'']);
     let end = value.find(['"', '\'', ' ', '>']).unwrap_or(value.len());
     Some(value[..end].to_lowercase())
+}
+
+fn nook_image(tag: &str) -> Option<String> {
+    let lower = tag.to_lowercase();
+    let at = lower.find(" src=")? + 5;
+    let value = tag[at..].trim_start_matches(['"', '\'']);
+    let end = value.find(['"', '\'', ' ', '>']).unwrap_or(value.len());
+    let url = &value[..end];
+    let path = url.strip_prefix("https://nookgaming.com/").or_else(|| url.strip_prefix("https://www.nookgaming.com/"))?;
+    let image = path.strip_prefix("wp-content/uploads/")?;
+    let ok = image.chars().all(|c| c.is_ascii_alphanumeric() || "/-_.".contains(c))
+        && !image.contains("..")
+        && [".jpg", ".jpeg", ".png", ".webp"].iter().any(|ext| image.to_lowercase().ends_with(ext));
+    ok.then(|| format!("https://nookgaming.com/{path}"))
 }
 
 fn entities(text: &str) -> String {
@@ -436,7 +456,7 @@ pub fn parse(html: &str) -> Vec<Route> {
             let steps = steps_of(&cell.tokens);
             if steps.iter().any(|s| s.kind == "choice" || s.kind == "ending") {
                 let name = if name.is_empty() { format!("{}", routes.len() + 1) } else { name };
-                routes.push(Route { name, steps });
+                routes.push(Route { name, steps, image: String::new() });
             }
         }
     }
@@ -675,6 +695,7 @@ fn download(shared: &Shared, key: &str, entry: &Entry, old: Option<Saved>) -> Re
         english: keep.as_ref().map(|o| o.english.clone()).unwrap_or_default(),
         translated: nook,
         source: if nook { "nook" } else { "seiya" }.into(),
+        version: SAVED_VERSION,
         routes,
     };
     save(shared, key, &saved)?;
@@ -684,8 +705,18 @@ fn download(shared: &Shared, key: &str, entry: &Entry, old: Option<Saved>) -> Re
 pub fn get(shared: &Shared, key: &str, refresh: bool) -> Result<Option<Saved>, String> {
     let old = load(shared, key);
     if let Some(saved) = &old {
-        if !refresh {
+        let stale = saved.source == "nook" && saved.version < SAVED_VERSION;
+        if !refresh && !stale {
             return Ok(Some(saved.clone()));
+        }
+        if stale && !refresh {
+            let entry = Entry { title: saved.title.clone(), url: saved.url.clone() };
+            return Ok(Some(download(shared, key, &entry, old.clone()).unwrap_or_else(|_| {
+                let mut kept = saved.clone();
+                kept.version = SAVED_VERSION;
+                let _ = save(shared, key, &kept);
+                kept
+            })));
         }
         let entry = Entry { title: saved.title.clone(), url: saved.url.clone() };
         return download(shared, key, &entry, old).map(Some);
@@ -853,6 +884,7 @@ pub fn parse_nook(html: &str) -> Vec<Route> {
     let mut mode: Option<&str> = None;
     let mut bold = 0;
     let mut plain = false;
+    let mut image = String::new();
     let html = html.find("data-nook-review-card").map_or(html, |end| &html[..end]);
     for token in tokens(html) {
         match token {
@@ -876,7 +908,11 @@ pub fn parse_nook(html: &str) -> Vec<Route> {
                         if !unused {
                             close_nook(&mut current, &mut routes);
                         }
-                        current = Some(Route { name: line.trim_end_matches(':').trim().to_string(), steps: Vec::new() });
+                        current = Some(Route {
+                            name: line.trim_end_matches(':').trim().to_string(),
+                            steps: Vec::new(),
+                            image: std::mem::take(&mut image),
+                        });
                     } else {
                         finish_bold(&mut text, &mut current);
                     }
@@ -891,12 +927,18 @@ pub fn parse_nook(html: &str) -> Vec<Route> {
                     mode = None;
                     if !name.is_empty() {
                         close_nook(&mut current, &mut routes);
-                        current = Some(Route { name, steps: Vec::new() });
+                        current = Some(Route { name, steps: Vec::new(), image: std::mem::take(&mut image) });
                     }
                 }
                 "li" => {
                     finish_nook(mode, &mut text, &mut current);
                     mode = Some("choice");
+                    image.clear();
+                }
+                "img" => {
+                    if let Some(found) = nook_image(tag) {
+                        image = found;
+                    }
                 }
                 "/li" | "ul" | "ol" | "/ul" | "/ol" | "/p" => {
                     finish_nook(mode, &mut text, &mut current);
@@ -1050,4 +1092,25 @@ pub fn clear(shared: &Shared, key: &str) -> Result<Saved, String> {
     saved.done.retain(|d| !d.starts_with(&format!("{route}-")));
     save(shared, key, &saved)?;
     Ok(saved)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nook_routes_keep_their_picture() {
+        let html = r#"<p><img src="https://nookgaming.com/wp-content/uploads/2023/04/Intro.jpg"></p>
+<h4>Common Route</h4><ul><li>Go left</li></ul>
+<p><img class="x" src="https://nookgaming.com/wp-content/uploads/2023/04/SabbatOfTheWitch_oDh7.jpg" alt=""></p>
+<h4><strong>Nene Route</strong></h4><ul><li>Help her</li></ul>
+<p><img src="https://evil.example/x.jpg"></p>
+<h4>Tsumugi Route</h4><ul><li>Stay</li></ul>"#;
+        let routes = parse_nook(html);
+        assert_eq!(routes.len(), 3);
+        assert_eq!(routes[0].image, "https://nookgaming.com/wp-content/uploads/2023/04/Intro.jpg");
+        assert_eq!(routes[1].image, "https://nookgaming.com/wp-content/uploads/2023/04/SabbatOfTheWitch_oDh7.jpg");
+        assert_eq!(routes[2].image, "");
+        assert_eq!(nook_image(r#"<img src="https://www.nookgaming.com/wp-content/uploads/a/../b.jpg">"#), None);
+    }
 }

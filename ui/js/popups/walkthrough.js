@@ -6,6 +6,7 @@ import {
   choiceCount,
   nextChoice,
   raw,
+  routeArt,
   say,
   secret,
   stepId,
@@ -143,6 +144,7 @@ function render() {
 
   box.replaceChildren(
     header(nav),
+    routeArt(current),
     next < 0
       ? el("p", { class: "muted guide-done" }, "Every choice of this route is ticked.")
       : el("div", { class: "guide-steps" }, rows),
