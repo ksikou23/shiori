@@ -245,6 +245,9 @@ fn clean_lines(lines: &Value) -> Value {
     for key in TEXT_LINES {
         if let Some(text) = lines[key].as_str() {
             clean.insert(key.into(), json!(short(text)));
+        } else if let Some(list) = lines[key].as_array() {
+            let list: Vec<String> = list.iter().filter_map(Value::as_str).take(MAX_LIST).map(short).collect();
+            clean.insert(key.into(), json!(list));
         }
     }
     for key in LIST_LINES {
@@ -344,6 +347,7 @@ mod tests {
         let lines = json!({
             "start": "Hi {name}",
             "idle": 5,
+            "back": ["see you", 3],
             "evil": "x",
             "pokes": ["one", 2, long],
             "chatter": "not a list",
@@ -351,6 +355,7 @@ mod tests {
         let clean = clean_lines(&lines);
         assert_eq!(clean["start"], "Hi {name}");
         assert!(clean.get("idle").is_none());
+        assert_eq!(clean["back"], json!(["see you"]));
         assert!(clean.get("evil").is_none());
         assert!(clean.get("chatter").is_none());
         assert_eq!(clean["pokes"].as_array().unwrap().len(), 2);

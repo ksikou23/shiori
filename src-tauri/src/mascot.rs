@@ -1141,8 +1141,13 @@ fn pick(lines: &[String]) -> Said {
     let index = random(lines.len());
     Said {
         text: lines.get(index).cloned().unwrap_or_default(),
-        index: Some(index),
+        index: (lines.len() > 1).then_some(index),
     }
+}
+
+fn pick_with(lines: &[String], from: &str, to: &str) -> Said {
+    let said = pick(lines);
+    Said { text: said.text.replace(from, to), index: said.index }
 }
 
 fn now() -> u64 {
@@ -1432,7 +1437,7 @@ fn random(len: usize) -> usize {
 }
 
 pub fn screenshot_saved(app: &AppHandle) {
-    say_as(app, None, "screenshot", |lines| just(lines.screenshot.clone()), 3);
+    say_as(app, None, "screenshot", |lines| pick(&lines.screenshot), 3);
 }
 
 struct Reading {
@@ -1493,15 +1498,15 @@ pub fn react(app: &AppHandle, old: &Snapshot, new: &Snapshot) {
     let section = new.section_label.clone();
 
     if new.detected && (!old.detected || old.key != new.key) {
-        say_as(app, None, "start", |lines| just(lines.start.replace("{name}", &name)), 6);
+        say_as(app, None, "start", |lines| pick_with(&lines.start, "{name}", &name), 6);
     } else if old.detected && !new.detected {
-        say_as(app, None, "stop", |lines| just(lines.stop.clone()), 6);
+        say_as(app, None, "stop", |lines| pick(&lines.stop), 6);
     } else if new.detected && new.idle && !old.idle {
-        say_as(app, None, "idle", |lines| just(lines.idle.clone()), 6);
+        say_as(app, None, "idle", |lines| pick(&lines.idle), 6);
     } else if new.detected && old.idle && !new.idle {
-        say_as(app, None, "back", |lines| just(lines.back.clone()), 3);
+        say_as(app, None, "back", |lines| pick(&lines.back), 3);
     } else if new.detected && !section.is_empty() && section != old.section_label {
-        say_as(app, None, "section", |lines| just(lines.section.replace("{section}", &section)), 4);
+        say_as(app, None, "section", |lines| pick_with(&lines.section, "{section}", &section), 4);
     }
 }
 

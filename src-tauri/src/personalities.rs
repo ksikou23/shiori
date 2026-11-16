@@ -8,12 +8,12 @@ pub const CUSTOM: &str = "custom";
 
 #[derive(Serialize)]
 pub struct Lines {
-    pub start: String,
-    pub stop: String,
-    pub idle: String,
-    pub back: String,
-    pub section: String,
-    pub screenshot: String,
+    pub start: Vec<String>,
+    pub stop: Vec<String>,
+    pub idle: Vec<String>,
+    pub back: Vec<String>,
+    pub section: Vec<String>,
+    pub screenshot: Vec<String>,
     pub pokes: Vec<String>,
     pub chatter: Vec<String>,
     pub reading: Vec<String>,
@@ -31,59 +31,46 @@ fn personality(id: &str, language: &str) -> &'static Value {
 pub fn lines(id: &str, language: &str) -> Lines {
     let own = personality(id, language);
     let english = personality(id, "en");
-    let text = |key: &str| own[key].as_str().or(english[key].as_str()).unwrap_or("").to_string();
     let list = |key: &str| {
-        own[key]
-            .as_array()
-            .or(english[key].as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(String::from)
-            .collect()
+        let found = [&own[key], &english[key]].into_iter().map(listed).find(|lines| !lines.is_empty());
+        found.unwrap_or_default()
     };
 
     Lines {
-        start: text("start"),
-        stop: text("stop"),
-        idle: text("idle"),
-        back: text("back"),
-        section: text("section"),
-        screenshot: text("screenshot"),
+        start: list("start"),
+        stop: list("stop"),
+        idle: list("idle"),
+        back: list("back"),
+        section: list("section"),
+        screenshot: list("screenshot"),
         pokes: list("pokes"),
         chatter: list("chatter"),
         reading: list("reading"),
     }
 }
 
+fn listed(value: &Value) -> Vec<String> {
+    let lines: Vec<&str> = match value {
+        Value::String(text) => vec![text.as_str()],
+        Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
+    };
+    lines.into_iter().map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect()
+}
+
 pub fn custom(mut base: Lines, own: &Value) -> Lines {
-    let text = |key: &str| own[key].as_str().map(str::trim).filter(|t| !t.is_empty()).map(String::from);
-    for (key, line) in [
+    for (key, lines) in [
         ("start", &mut base.start),
         ("stop", &mut base.stop),
         ("idle", &mut base.idle),
         ("back", &mut base.back),
         ("section", &mut base.section),
         ("screenshot", &mut base.screenshot),
-    ] {
-        if let Some(own) = text(key) {
-            *line = own;
-        }
-    }
-    for (key, lines) in [
         ("pokes", &mut base.pokes),
         ("chatter", &mut base.chatter),
         ("reading", &mut base.reading),
     ] {
-        let own: Vec<String> = own[key]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(String::from)
-            .collect();
+        let own = listed(&own[key]);
         if !own.is_empty() {
             *lines = own;
         }
@@ -125,14 +112,14 @@ mod tests {
                 let own = &lang::data(&code)["personalities"][choice.id];
                 assert!(own.is_object(), "{code}: {}", choice.id);
                 let lines = lines(choice.id, &code);
-                assert!(lines.start.contains("{name}"), "{code} {} start", choice.id);
-                assert!(lines.section.contains("{section}"), "{code} {} section", choice.id);
+                assert!(lines.start.iter().all(|l| l.contains("{name}")), "{code} {} start", choice.id);
+                assert!(lines.section.iter().all(|l| l.contains("{section}")), "{code} {} section", choice.id);
                 assert_eq!(lines.pokes.len(), 3, "{code} {} pokes", choice.id);
                 assert_eq!(lines.chatter.len(), 3, "{code} {} chatter", choice.id);
                 assert_eq!(lines.reading.len(), 3, "{code} {} reading", choice.id);
                 assert!(lines.reading.iter().all(|l| l.contains("{name}") || l.contains("{total}") || l.contains("{session}")));
                 for line in [&lines.stop, &lines.idle, &lines.back, &lines.screenshot] {
-                    assert!(!line.is_empty(), "{code} {}", choice.id);
+                    assert!(!line.is_empty() && line.iter().all(|l| !l.is_empty()), "{code} {}", choice.id);
                 }
             }
         }
@@ -140,9 +127,10 @@ mod tests {
 
     #[test]
     fn custom_lines_fall_back_when_empty() {
-        let own = serde_json::json!({"start": " Hi {name} ", "stop": "", "pokes": ["a", " ", "b"], "chatter": []});
+        let own = serde_json::json!({"start": " Hi {name} ", "stop": "", "idle": ["x", "", "y"], "pokes": ["a", " ", "b"], "chatter": []});
         let lines = custom(lines(DEFAULT, "en"), &own);
-        assert_eq!(lines.start, "Hi {name}");
+        assert_eq!(lines.start, ["Hi {name}"]);
+        assert_eq!(lines.idle, ["x", "y"]);
         assert_eq!(lines.stop, super::lines(DEFAULT, "en").stop);
         assert_eq!(lines.pokes, ["a", "b"]);
         assert_eq!(lines.chatter, super::lines(DEFAULT, "en").chatter);
