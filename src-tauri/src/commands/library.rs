@@ -178,7 +178,7 @@ pub fn update_game(
     key: String,
     fields: Map<String, Value>,
 ) -> Result<(), String> {
-    const EDITABLE: [&str; 5] = ["status", "privacy", "title", "launcher", "section"];
+    const EDITABLE: [&str; 6] = ["status", "privacy", "site", "title", "launcher", "section"];
 
     for (field, value) in &fields {
         if !EDITABLE.contains(&field.as_str()) {
@@ -186,6 +186,9 @@ pub fn update_game(
         }
         if field == "status" && !(value == "" || STATUSES.iter().any(|s| value == *s)) {
             return Err(format!("unknown status {value}"));
+        }
+        if field == "site" && !(value == "shown" || value == "hidden") {
+            return Err(format!("unknown site setting {value}"));
         }
     }
 

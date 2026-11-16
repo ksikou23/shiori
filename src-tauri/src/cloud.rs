@@ -327,7 +327,11 @@ fn short_key(key: &str) -> String {
 }
 
 fn hidden(entry: &Map<String, Value>) -> bool {
-    HIDDEN_PRIVACY.contains(&entry_text(entry, "privacy").to_lowercase().as_str())
+    match entry_text(entry, "site").as_str() {
+        "hidden" => true,
+        "shown" => false,
+        _ => HIDDEN_PRIVACY.contains(&entry_text(entry, "privacy").to_lowercase().as_str()),
+    }
 }
 
 fn vndb_cover(url: &str) -> Option<String> {
@@ -421,7 +425,7 @@ pub fn profile_payload(shared: &Shared, fetch: bool) -> Value {
     let snap = shared.snapshot();
     let now = keys
         .get(&snap.key)
-        .filter(|_| snap.detected && !snap.paused && !HIDDEN_PRIVACY.contains(&snap.privacy.as_str()))
+        .filter(|_| snap.detected && !snap.paused)
         .map(|entry| Value::Object(vn_card(shared, &snap.key, entry, false)))
         .unwrap_or(Value::Null);
     json!({ "public": true, "now": now, "vns": vns, "hidden": hidden_keys })
@@ -504,6 +508,12 @@ mod tests {
         assert!(hidden(&entry("Private")));
         assert!(!hidden(&entry("partial")));
         assert!(!hidden(&entry("")));
+        let mut shown = entry("off");
+        shown.insert("site".into(), json!("shown"));
+        assert!(!hidden(&shown));
+        let mut kept = entry("full");
+        kept.insert("site".into(), json!("hidden"));
+        assert!(hidden(&kept));
         assert_eq!(short_key("bgi@eustia").len(), 16);
         assert!(safe_image(&json!({ "sexual": 0.33, "violence": 0 })));
         assert!(!safe_image(&json!({ "sexual": 0.93, "violence": 0 })));

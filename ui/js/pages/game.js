@@ -36,6 +36,11 @@ const PRIVACY_HELP = {
   off: "Nothing is shared on Discord while this game is open.",
 };
 
+const SITE_HELP = {
+  shown: "Your page and the feed show this VN and your activity on it.",
+  hidden: "This VN and your past activity on it are hidden on the website.",
+};
+
 const TEMPLATE = `
   <button class="back" data-id="back">← Library</button>
 
@@ -112,8 +117,9 @@ const TEMPLATE = `
       </div>
 
       <div class="card">
+        <div class="card-title"><b>Privacy</b></div>
         <div class="field">
-          <b>Discord privacy</b>
+          <span>Discord</span>
           <div class="seg" data-id="privacy">
             <button data-v="full">Full</button>
             <button data-v="partial">Partial</button>
@@ -122,6 +128,14 @@ const TEMPLATE = `
           </div>
         </div>
         <div class="hint-text" data-id="privacy-help"></div>
+        <div class="field">
+          <span>Website</span>
+          <div class="seg" data-id="site">
+            <button data-v="shown">Shown</button>
+            <button data-v="hidden">Hidden</button>
+          </div>
+        </div>
+        <div class="hint-text" data-id="site-help"></div>
       </div>
     </div>
 
@@ -259,6 +273,7 @@ async function load() {
   renderVndb(entry);
   renderStatus(entry);
   renderPrivacy(entry.privacy || "full");
+  renderSite(entry);
   renderVote(entry);
   renderLauncher(entry);
   renderDuplicates();
@@ -357,7 +372,26 @@ function renderPrivacy(value) {
   part("privacy-help").textContent = t(PRIVACY_HELP[value] || "");
   segmented(part("privacy"), value, async (picked) => {
     await call("update_game", { key, fields: { privacy: picked } });
+    entry.privacy = picked;
     renderPrivacy(picked);
+    renderSite(entry);
+  });
+}
+
+function siteOf(entry) {
+  if (entry.site === "shown" || entry.site === "hidden") {
+    return entry.site;
+  }
+  return ["private", "off"].includes(entry.privacy) ? "hidden" : "shown";
+}
+
+function renderSite(entry) {
+  const value = siteOf(entry);
+  part("site-help").textContent = t(SITE_HELP[value]);
+  segmented(part("site"), value, async (picked) => {
+    await call("update_game", { key, fields: { site: picked } });
+    entry.site = picked;
+    renderSite(entry);
   });
 }
 
