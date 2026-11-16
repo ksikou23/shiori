@@ -96,6 +96,11 @@ async function save(changes) {
   await call("update_settings", { changes });
 }
 
+async function quietSave(changes) {
+  Object.assign(store.settings, changes);
+  await call("update_settings", { changes });
+}
+
 function render() {
   for (const button of part("tabs").querySelectorAll("button")) {
     button.classList.toggle("on", button.dataset.tab === tab);
@@ -655,6 +660,9 @@ function dataSection() {
 }
 
 const PRIVACY_URL = "https://shiori.maia.moe/privacy";
+const CLOUD_FRESH = 60000;
+let cloudStatus = null;
+let cloudChecked = 0;
 
 function cloudDate(ms) {
   return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -702,7 +710,7 @@ function cloudBox() {
   const failed = () =>
     show(
       el("div", { class: "hint-text" }, "Couldn't reach the cloud. Check your connection."),
-      el("button", { class: "btn secondary small", onclick: refresh }, "Try again"),
+      el("button", { class: "btn secondary small", onclick: () => refresh({ loud: true }) }, "Try again"),
     );
 
   const signedIn = (status) => {
@@ -716,7 +724,7 @@ function cloudBox() {
           backup.size ? el("span", { class: "muted" }, ` · ${cloudSize(backup.size)}`) : null,
         )
       : el("span", { class: "cloud-saved" }, el("span", { class: "cloud-dot" }), t("Nothing saved in the cloud yet."));
-    const saveButton = el("button", { class: "btn" }, "Save to cloud");
+    const saveButton = el("button", { class: "btn small" }, "Save to cloud");
     saveButton.onclick = async () => {
       saveButton.disabled = true;
       const result = await call("cloud_save");
@@ -726,7 +734,7 @@ function cloudBox() {
         refresh();
       }
     };
-    const loadButton = el("button", { class: "btn secondary", disabled: !backup }, "Load from cloud");
+    const loadButton = el("button", { class: "btn secondary small", disabled: !backup }, "Load from cloud");
     loadButton.onclick = () => loadCloud(status);
     const avatar = status.avatar_url
       ? el("img", { class: "cloud-avatar", src: status.avatar_url, alt: "" })
@@ -747,19 +755,27 @@ function cloudBox() {
           ),
           el("button", { class: "btn secondary small", onclick: signOut }, "Sign out"),
         ),
-        saved,
-        el("div", { class: "row" }, saveButton, loadButton),
-        toggle(
-          "Save to the cloud when Shiori closes",
-          !!store.settings.sync_auto_save,
-          (on) => save({ sync_auto_save: on }),
-          "Only when you quit Shiori RPC, not when you close its window.",
-        ),
-        toggle(
-          "Include my VNDB token",
-          !!store.settings.sync_vndb_token,
-          (on) => save({ sync_vndb_token: on }),
-          "So you don't have to paste it again on another PC. Off: it stays on this PC only.",
+        el(
+          "div",
+          { class: "cloud-part" },
+          el(
+            "div",
+            { class: "cloud-part-head" },
+            el("div", { class: "cloud-part-title" }, el("b", {}, "Backup"), saved),
+            el("div", { class: "row cloud-actions" }, saveButton, loadButton),
+          ),
+          toggle(
+            "Save to the cloud when Shiori closes",
+            !!store.settings.sync_auto_save,
+            (on) => quietSave({ sync_auto_save: on }),
+            "Only when you quit Shiori RPC, not when you close its window.",
+          ),
+          toggle(
+            "Include my VNDB token",
+            !!store.settings.sync_vndb_token,
+            (on) => quietSave({ sync_vndb_token: on }),
+            "So you don't have to paste it again on another PC. Off: it stays on this PC only.",
+          ),
         ),
         el(
           "div",
@@ -771,14 +787,32 @@ function cloudBox() {
     );
   };
 
-  async function refresh() {
-    show(el("div", { class: "hint-text" }, "Checking your cloud backup…"));
+  const draw = (status) => (status.signed_in ? signedIn(status) : signedOut());
+
+  async function refresh({ loud = false } = {}) {
+    if (loud || !cloudStatus) {
+      show(el("div", { class: "hint-text" }, "Checking your cloud backup…"));
+    }
     try {
       const status = await invoke("cloud_status");
-      status.signed_in ? signedIn(status) : signedOut();
+      const changed = JSON.stringify(status) !== JSON.stringify(cloudStatus);
+      cloudStatus = status;
+      cloudChecked = Date.now();
+      if (changed || loud || !box.firstChild || box.querySelector(".hint-text")) {
+        draw(status);
+      }
     } catch {
-      failed();
+      if (!cloudStatus) {
+        failed();
+      }
     }
+  }
+
+  if (cloudStatus) {
+    draw(cloudStatus);
+  }
+  if (!cloudStatus || Date.now() - cloudChecked > CLOUD_FRESH) {
+    refresh();
   }
 
   async function signIn() {
@@ -787,7 +821,9 @@ function cloudBox() {
     );
     try {
       const status = await invoke("cloud_login");
-      status.signed_in ? signedIn(status) : signedOut();
+      cloudStatus = status;
+      cloudChecked = Date.now();
+      draw(status);
       toast("Signed in");
     } catch (error) {
       toast(typeof error === "string" ? error : "Couldn't sign in", { error: true });
@@ -798,7 +834,8 @@ function cloudBox() {
   async function signOut() {
     await call("cloud_logout");
     store.settings.sync_auto_save = false;
-    refresh();
+    cloudStatus = null;
+    refresh({ loud: true });
   }
 
   async function deleteCloud() {
@@ -810,7 +847,8 @@ function cloudBox() {
     if (sure) {
       await call("cloud_delete");
       toast("Your cloud data was deleted");
-      refresh();
+      cloudStatus = null;
+      refresh({ loud: true });
     }
   }
 
@@ -834,7 +872,6 @@ function cloudBox() {
     }
   }
 
-  refresh();
   return box;
 }
 

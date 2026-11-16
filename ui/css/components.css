@@ -692,6 +692,44 @@ dialog[open] {
   font-size: 13px;
 }
 
+.cloud-part {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.cloud-part-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cloud-part-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cloud-part-title b {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cloud-actions {
+  gap: 8px;
+}
+
+.cloud-part .toggle {
+  margin: 0;
+}
+
 .danger-text {
   color: var(--red);
 }
