@@ -17,6 +17,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETWORKAREA,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
+use windows::Win32::UI::WindowsAndMessaging::{
+    SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct WindowInfo {
@@ -227,6 +230,20 @@ fn change_ex_style(h: isize, add: u32) {
 
 pub fn make_no_activate(h: isize) {
     change_ex_style(h, WS_EX_NOACTIVATE.0);
+}
+
+pub fn raise_topmost(h: isize) {
+    unsafe {
+        let _ = SetWindowPos(
+            HWND(h as *mut c_void),
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
+    }
 }
 
 pub fn hide_from_taskbar(h: isize) {
