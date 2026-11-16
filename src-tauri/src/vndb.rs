@@ -625,22 +625,43 @@ pub fn best_match(results: Vec<VnResult>, query: &str) -> Option<VnResult> {
 
     let q = loose(query);
     if q.is_empty() {
-        return results.into_iter().next();
+        return None;
     }
 
     let mut best: Option<(f64, &VnResult)> = None;
     for vn in &results {
-        let score = similarity(&q, &loose(&vn.title)).max(similarity(&q, &loose(&vn.alt_title)));
+        let score = [&vn.title, &vn.alt_title]
+            .into_iter()
+            .chain(&vn.other_titles)
+            .map(|title| similarity(&q, &loose(title)))
+            .fold(0.0, f64::max);
         if score > best.map_or(0.0, |(s, _)| s) {
             best = Some((score, vn));
         }
     }
 
-    match best {
-        Some((score, vn)) if score >= 0.6 => Some(vn.clone()),
-        _ => results
-            .iter()
-            .max_by(|a, b| a.rating.total_cmp(&b.rating))
-            .cloned(),
+    best.filter(|(score, _)| *score >= 0.6).map(|(_, vn)| vn.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vn(id: &str, title: &str, rating: f64) -> VnResult {
+        VnResult { id: id.into(), title: title.into(), rating, ..Default::default() }
+    }
+
+    #[test]
+    fn no_guess_without_a_close_title() {
+        let results = vec![vn("v1", "Eternum", 9.0), vn("v2", "D.S. -Dal Segno-", 7.0)];
+        assert!(best_match(results.clone(), "Some Unknown Game").is_none());
+        assert_eq!(best_match(results, "Eternum").map(|v| v.id), Some("v1".into()));
+    }
+
+    #[test]
+    fn other_titles_count() {
+        let mut entry = vn("v3", "Romanized Name", 8.0);
+        entry.other_titles = vec!["素晴らしき日々".into()];
+        assert_eq!(best_match(vec![entry], "素晴らしき日々").map(|v| v.id), Some("v3".into()));
     }
 }

@@ -484,7 +484,8 @@ impl Engine {
         });
 
         let cover = self.resolve_cover(&entry, vn.as_ref(), nsfw_ok, &asset);
-        let learned = learned_fields(&entry, &game_name, vn.as_ref(), &cover);
+        let unmatched = matches!(self.auto_match.get(&key), Some(None));
+        let learned = learned_fields(&entry, &game_name, vn.as_ref(), unmatched, &cover);
 
         let (rules, playtime) = {
             let mut cfg = self.shared.config.lock().unwrap();
@@ -913,6 +914,7 @@ fn learned_fields(
     entry: &Map<String, Value>,
     game_name: &str,
     vn: Option<&VnResult>,
+    unmatched: bool,
     cover: &Cover,
 ) -> Map<String, Value> {
     let mut learned = Map::new();
@@ -925,6 +927,8 @@ fn learned_fields(
         if text(entry, "vndb_id").is_empty() && text(entry, "matched_vndb_id") != vn.id {
             learned.insert("matched_vndb_id".into(), json!(vn.id));
         }
+    } else if unmatched && !text(entry, "matched_vndb_id").is_empty() {
+        learned.insert("matched_vndb_id".into(), json!(""));
     }
     if !entry.contains_key("status") {
         learned.insert("status".into(), json!("playing"));
