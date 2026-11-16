@@ -243,6 +243,11 @@ impl Vndb {
         Ok(results.iter().map(VnResult::from_api).collect())
     }
 
+    pub fn cached_raw(&self, id: &str) -> Option<Value> {
+        let cache = self.cache_dir.join(format!("id_{}.json", vn_id(id)));
+        serde_json::from_str(&fs::read_to_string(cache).ok()?).ok()
+    }
+
     pub fn get(&self, id: &str) -> Result<Option<VnResult>, String> {
         let id = vn_id(id);
         let cache = self.cache_dir.join(format!("id_{id}.json"));

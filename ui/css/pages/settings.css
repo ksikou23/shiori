@@ -208,3 +208,384 @@
   border-top: 0;
   padding-top: 0;
 }
+
+.cp {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+}
+
+.cp-banner {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  height: 96px;
+  padding: 12px 14px;
+  background:
+    radial-gradient(circle at 85% -40%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 60%),
+    linear-gradient(120deg, color-mix(in srgb, var(--accent) 35%, var(--surface)), var(--surface));
+}
+
+.cp-banner.image {
+  background-size: cover;
+  background-position: center;
+}
+
+.cp-banner.image::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #0008, transparent 45%, color-mix(in srgb, var(--surface-alt) 70%, transparent));
+}
+
+.cp-banner > * {
+  position: relative;
+}
+
+.cp-banner > .cp-banner-img {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 0.45s var(--ease);
+}
+
+.cp-banner-img::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #0008, transparent 45%, color-mix(in srgb, var(--surface-alt) 70%, transparent));
+}
+
+.cp-banner-img.ready,
+.cp-avatar.fade.ready {
+  opacity: 1;
+}
+
+.cp-avatar.fade {
+  opacity: 0;
+  transition: opacity 0.35s var(--ease);
+}
+
+.cp-banner-img.instant,
+.cp-avatar.fade.instant {
+  transition: none;
+}
+
+.sk {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-hover) 50%, var(--surface) 75%) 0 0 / 300% 100%;
+  animation: cp-shimmer 1.3s linear infinite;
+}
+
+.cp-avatar.sk {
+  border-radius: 50%;
+}
+
+.sk-line {
+  width: 90px;
+  height: 11px;
+}
+
+.sk-line.wide {
+  width: 140px;
+  height: 15px;
+  margin-bottom: 4px;
+}
+
+.sk-line.long {
+  width: min(360px, 70%);
+  height: 26px;
+}
+
+.sk-num {
+  width: 44px;
+  height: 19px;
+  margin-top: 4px;
+}
+
+.sk-btn {
+  width: 110px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.cp-stat .sk {
+  background-color: var(--surface-alt);
+  background-image: linear-gradient(90deg, var(--surface-alt) 25%, var(--surface-hover) 50%, var(--surface-alt) 75%);
+}
+
+.cp.cp-in > :not(.cp-banner) {
+  animation: cp-in 0.35s var(--ease) both;
+}
+
+.cp.cp-in > :nth-child(3) {
+  animation-delay: 0.04s;
+}
+
+.cp.cp-in > :nth-child(n + 4) {
+  animation-delay: 0.08s;
+}
+
+@keyframes cp-shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@keyframes cp-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk,
+  .cp.cp-in > * {
+    animation: none;
+  }
+}
+
+.cp-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cp-earth {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.cp-site,
+.cp-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cp-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cp-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 0 16px;
+  margin-top: -38px;
+}
+
+.cp-avatar {
+  width: 76px;
+  height: 76px;
+  flex: none;
+  border-radius: 50%;
+  border: 4px solid var(--surface-alt);
+  object-fit: cover;
+  background: var(--surface-hover);
+}
+
+.cp-avatar.empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.cp-avatar.empty svg {
+  width: 30px;
+  height: 30px;
+}
+
+.cp-head > .cp-avatar {
+  align-self: flex-end;
+  box-sizing: border-box;
+  min-height: 0;
+  max-height: 76px;
+}
+
+.cp-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 6px;
+}
+
+.cp-who b {
+  font-size: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-who .muted {
+  font-size: 13px;
+}
+
+.cp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cp-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--subtle);
+}
+
+.cp-pill.on {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: var(--green);
+}
+
+.cp-pill.on i {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+
+.cp-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px 16px 0;
+}
+
+.cp-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.cp-stat span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cp-stat b {
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cp-switch {
+  padding: 14px 16px 0;
+}
+
+.cp-switch .toggle {
+  margin: 0;
+}
+
+.cp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 16px;
+}
+
+.cp-note {
+  margin: 14px 16px 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.cp-wait {
+  padding: 14px 16px 16px;
+  margin: 0;
+}
+
+.cp-info {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.cp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.cp-list > b {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cp-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cp-mark {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 1px;
+  padding: 2px;
+  border-radius: 50%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cp-list.shown .cp-mark {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+}
+
+.cp-list.hidden .cp-mark {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+
+@media (max-width: 720px) {
+  .cp-info {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

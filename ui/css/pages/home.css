@@ -132,4 +132,6 @@
   color: var(--subtle);
 }
 
-
+.community-offer p {
+  margin: 0 0 8px;
+}

@@ -10,6 +10,7 @@ import { discordButton, discordLogo } from "../components/discord-button.js";
 import { languagePicker } from "../components/language-picker.js";
 import { plural, t } from "../i18n.js";
 import { presenceBuilder } from "./presence.js";
+import { communityTab } from "../components/community-tab.js";
 
 const TEMPLATE = `
   <div class="page-head">
@@ -19,6 +20,7 @@ const TEMPLATE = `
   <div class="card">
     <div class="tabs" data-id="tabs">
       <button data-tab="general">General</button>
+      <button data-tab="community">Community</button>
       <button data-tab="presence">Presence</button>
       <button data-tab="theme">Theme</button>
       <button data-tab="blacklist">Never detect</button>
@@ -104,6 +106,8 @@ function render() {
     renderThemeTab(body, save);
   } else if (tab === "presence") {
     body.replaceChildren(...presenceTab());
+  } else if (tab === "community") {
+    body.replaceChildren(...communityTab());
   } else if (tab === "advanced") {
     body.replaceChildren(...advancedTab());
   } else if (tab === "blacklist") {

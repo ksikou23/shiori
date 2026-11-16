@@ -99,6 +99,7 @@ fn defaults() -> Map<String, Value> {
         "sync_token": "",
         "sync_user": "",
         "sync_auto_save": false,
+        "profile_public": false,
         "sync_vndb_token": false,
         "screenshot_dir": "",
         "locale_emulator_path": "",

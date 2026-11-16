@@ -132,6 +132,7 @@ nav button .labs-nav-icon {
 .labs-nav-text,
 .brand > div,
 .pill span,
+.side-link span,
 #pause-label {
   white-space: nowrap;
   overflow: hidden;
@@ -162,6 +163,7 @@ html.labs-compact nav button .labs-nav-icon {
 html.labs-compact .labs-nav-text,
 html.labs-compact .brand > div,
 html.labs-compact .pill span,
+html.labs-compact .side-link span,
 html.labs-compact #pause-label {
   max-width: 0;
   opacity: 0;

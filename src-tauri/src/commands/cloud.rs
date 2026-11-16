@@ -56,6 +56,12 @@ pub async fn cloud_delete(shared: SharedState<'_>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn cloud_profile(shared: SharedState<'_>, public: bool) -> Result<Value, String> {
+    let shared = Arc::clone(&shared);
+    blocking(move || cloud::set_public(&shared, public)).await
+}
+
+#[tauri::command]
 pub async fn cloud_logout(shared: SharedState<'_>) -> Result<(), String> {
     let shared = Arc::clone(&shared);
     blocking(move || {

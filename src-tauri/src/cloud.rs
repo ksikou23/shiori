@@ -44,6 +44,11 @@ fn remember(shared: &Shared, token: &str, name: &str) {
 
 fn signed_out(shared: &Shared) {
     remember(shared, "", "");
+    let _ = shared
+        .config
+        .lock()
+        .unwrap()
+        .update(Map::from_iter([(PROFILE.to_string(), json!(false))]));
 }
 
 fn nonce() -> String {
@@ -215,6 +220,13 @@ pub fn status(shared: &Shared) -> Result<Value, String> {
     if !name.is_empty() {
         remember(shared, &token, &name);
     }
+    if let Some(public) = me["profile"]["public"].as_bool() {
+        let _ = shared
+            .config
+            .lock()
+            .unwrap()
+            .update(Map::from_iter([(PROFILE.to_string(), json!(public))]));
+    }
     Ok(json!({
         "signed_in": true,
         "name": name,
@@ -222,6 +234,7 @@ pub fn status(shared: &Shared) -> Result<Value, String> {
         "avatar": me["avatar"],
         "avatar_url": me["avatar_url"],
         "backup": me["backup"],
+        "profile": me["profile"],
     }))
 }
 
@@ -299,6 +312,174 @@ pub fn logout(shared: &Shared) {
     signed_out(shared);
 }
 
+const PROFILE: &str = "profile_public";
+const PROFILE_EVERY: Duration = Duration::from_secs(180);
+const PROFILE_CHECK: Duration = Duration::from_secs(60);
+const HIDDEN_PRIVACY: [&str; 2] = ["off", "private"];
+const PUBLIC_SEXUAL: f64 = 0.5;
+
+fn entry_text(entry: &Map<String, Value>, field: &str) -> String {
+    entry.get(field).and_then(Value::as_str).unwrap_or("").trim().to_string()
+}
+
+fn short_key(key: &str) -> String {
+    sha1_smol::Sha1::from(key).digest().to_string()[..16].to_string()
+}
+
+fn hidden(entry: &Map<String, Value>) -> bool {
+    HIDDEN_PRIVACY.contains(&entry_text(entry, "privacy").to_lowercase().as_str())
+}
+
+fn vndb_cover(url: &str) -> Option<String> {
+    let path = url
+        .strip_prefix("https://t.vndb.org/cv/")
+        .or_else(|| url.strip_prefix("https://t.vndb.org/cv.t/"))?;
+    let valid = path.split('/').count() == 2
+        && path.chars().all(|c| c.is_ascii_alphanumeric() || c == '/' || c == '.');
+    valid.then(|| path.to_string())
+}
+
+fn safe_image(image: &Value) -> bool {
+    image["sexual"].as_f64().unwrap_or(2.0) < PUBLIC_SEXUAL && image["violence"].as_f64().unwrap_or(2.0) < 1.0
+}
+
+fn vndb_image(shared: &Shared, id: &str, fetch: bool) -> Option<Value> {
+    if let Some(raw) = shared.vndb.cached_raw(id) {
+        return Some(raw["image"].clone());
+    }
+    static TRIED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::LazyLock::new(Default::default);
+    if !fetch || !TRIED.lock().unwrap().insert(id.to_string()) {
+        return None;
+    }
+    shared.vndb.get(id).ok()??;
+    Some(shared.vndb.cached_raw(id)?["image"].clone())
+}
+
+fn cover_path(shared: &Shared, entry: &Map<String, Value>, fetch: bool) -> Option<(String, bool)> {
+    let flagged = entry.get("cover_nsfw").and_then(Value::as_bool).unwrap_or(false);
+    let image = vndb_id(entry).and_then(|id| vndb_image(shared, &id, fetch));
+    let unsafe_image = image.as_ref().is_none_or(|image| !safe_image(image));
+    let path = match entry_text(entry, "cover_source").as_str() {
+        "url" => vndb_cover(&entry_text(entry, "cover_value"))?,
+        "local" | "none" => return None,
+        _ => vndb_cover(image.as_ref()?["url"].as_str()?)?,
+    };
+    Some((path, flagged || unsafe_image))
+}
+
+fn vndb_id(entry: &Map<String, Value>) -> Option<String> {
+    ["vndb_id", "matched_vndb_id"]
+        .iter()
+        .map(|field| entry_text(entry, field))
+        .find(|id| !id.is_empty())
+}
+
+fn vn_card(shared: &Shared, key: &str, entry: &Map<String, Value>, fetch: bool) -> Map<String, Value> {
+    let title: String = crate::screenshots::display_name(key, entry).chars().take(80).collect();
+    let mut card = Map::from_iter([("k".to_string(), json!(short_key(key))), ("t".to_string(), json!(title))]);
+    if let Some(id) = vndb_id(entry) {
+        card.insert("id".into(), json!(id));
+    }
+    if let Some((path, nsfw)) = cover_path(shared, entry, fetch) {
+        card.insert("cv".into(), json!(path));
+        if nsfw {
+            card.insert("x".into(), json!(1));
+        }
+    }
+    card
+}
+
+pub fn profile_payload(shared: &Shared, fetch: bool) -> Value {
+    let cfg = shared.config.lock().unwrap();
+    let games = crate::commands::library::visible_games(&cfg);
+    drop(cfg);
+    let mut vns = Vec::new();
+    let mut hidden_keys = Vec::new();
+    let mut keys = std::collections::HashMap::new();
+    for (key, entry) in &games {
+        if hidden(entry) {
+            hidden_keys.push(short_key(key));
+            continue;
+        }
+        let seconds = entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0);
+        let status = entry_text(entry, "status");
+        if seconds < 60 && status.is_empty() {
+            continue;
+        }
+        let mut card = vn_card(shared, key, entry, fetch);
+        card.insert("s".into(), json!(status));
+        card.insert("p".into(), json!(seconds.max(0)));
+        for (field, short) in [("vndb_vote", "u"), ("last_played", "lp"), ("finished_at", "fa")] {
+            if let Some(value) = entry.get(field).and_then(Value::as_i64).filter(|v| *v > 0) {
+                card.insert(short.into(), json!(value));
+            }
+        }
+        keys.insert(key.clone(), entry);
+        vns.push(Value::Object(card));
+    }
+    let snap = shared.snapshot();
+    let now = keys
+        .get(&snap.key)
+        .filter(|_| snap.detected && !snap.paused && !HIDDEN_PRIVACY.contains(&snap.privacy.as_str()))
+        .map(|entry| Value::Object(vn_card(shared, &snap.key, entry, false)))
+        .unwrap_or(Value::Null);
+    json!({ "public": true, "now": now, "vns": vns, "hidden": hidden_keys })
+}
+
+fn put_profile(shared: &Shared, body: &Value) -> Result<Value, String> {
+    let token = token(shared).ok_or("Sign in with Discord first.")?;
+    let reply = client(20)?
+        .put(format!("{}/profile", api()))
+        .bearer_auth(&token)
+        .json(body)
+        .send()
+        .map_err(|e| e.to_string())?;
+    check(reply, shared)?.json().map_err(|e| e.to_string())
+}
+
+pub fn set_public(shared: &Shared, public: bool) -> Result<Value, String> {
+    let body = if public { profile_payload(shared, false) } else { json!({ "public": false }) };
+    let answer = put_profile(shared, &body)?;
+    let _ = shared
+        .config
+        .lock()
+        .unwrap()
+        .update(Map::from_iter([(PROFILE.to_string(), json!(public))]));
+    Ok(answer)
+}
+
+pub fn start_profile_sync(shared: std::sync::Arc<Shared>) {
+    std::thread::spawn(move || {
+        let mut last_body = String::new();
+        let mut last_now = Value::Null;
+        let mut last_push: Option<Instant> = None;
+        loop {
+            std::thread::sleep(PROFILE_CHECK);
+            let wanted = shared.config.lock().unwrap().bool(PROFILE);
+            if !wanted || token(&shared).is_none() {
+                last_body.clear();
+                continue;
+            }
+            let body = profile_payload(&shared, true);
+            let text = body.to_string();
+            let now_changed = body["now"]["k"] != last_now["k"];
+            let due = last_push.is_none_or(|at| at.elapsed() >= PROFILE_EVERY);
+            if text == last_body || !(now_changed || due) {
+                continue;
+            }
+            last_push = Some(Instant::now());
+            match put_profile(&shared, &body) {
+                Ok(_) => {
+                    last_body = text;
+                    last_now = body["now"].clone();
+                }
+                Err(error) => crate::crash::note(format!("public profile: {error}")),
+            }
+        }
+    });
+}
+
 pub fn save_on_exit(shared: &Shared) {
     let wanted = shared.config.lock().unwrap().bool(AUTO_SAVE);
     if wanted && token(shared).is_some() {
@@ -311,6 +492,24 @@ pub fn save_on_exit(shared: &Shared) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_vndb_covers_and_shared_games_go_public() {
+        assert_eq!(vndb_cover("https://t.vndb.org/cv/21/97921.jpg").as_deref(), Some("21/97921.jpg"));
+        assert_eq!(vndb_cover("https://t.vndb.org/cv.t/21/97921.jpg").as_deref(), Some("21/97921.jpg"));
+        assert_eq!(vndb_cover("https://files.catbox.moe/o9ev2s.png"), None);
+        assert_eq!(vndb_cover("https://t.vndb.org/cv/../../x.jpg"), None);
+        let entry = |privacy: &str| Map::from_iter([("privacy".to_string(), json!(privacy))]);
+        assert!(hidden(&entry("off")));
+        assert!(hidden(&entry("Private")));
+        assert!(!hidden(&entry("partial")));
+        assert!(!hidden(&entry("")));
+        assert_eq!(short_key("bgi@eustia").len(), 16);
+        assert!(safe_image(&json!({ "sexual": 0.33, "violence": 0 })));
+        assert!(!safe_image(&json!({ "sexual": 0.93, "violence": 0 })));
+        assert!(!safe_image(&json!({ "sexual": 0, "violence": 1.2 })));
+        assert!(!safe_image(&json!({})));
+    }
 
     #[test]
     fn login_answers_are_read() {

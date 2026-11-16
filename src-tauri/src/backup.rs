@@ -10,7 +10,7 @@ use crate::config::{safe_filename, Config, Entry};
 
 const FORMAT: i64 = 1;
 const MANIFEST: &str = "vnrpc-backup.json";
-const THIS_PC_ONLY: [&str; 4] = ["sync_token", "sync_user", "sync_auto_save", "sync_vndb_token"];
+const THIS_PC_ONLY: [&str; 5] = ["sync_token", "sync_user", "sync_auto_save", "sync_vndb_token", "profile_public"];
 const CLOUD_SECRETS: [&str; 1] = ["vndb_token"];
 
 pub fn default_name() -> String {

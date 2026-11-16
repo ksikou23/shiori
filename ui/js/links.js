@@ -2,6 +2,7 @@ export const REPO = "https://github.com/lennmoe/shiori";
 export const RELEASES_PAGE = `${REPO}/releases`;
 
 export const DISCORD_INVITE = "https://discord.gg/cDTUQFq4Hn";
+export const COMMUNITY_URL = "https://shiori.maia.moe/";
 
 function windowsVersion() {
   return /Windows NT 10/.test(navigator.userAgent) ? "Windows 10/11" : "Windows";

@@ -9,6 +9,8 @@ import { formatPlaytime } from "./format.js";
 import { openSearch } from "./labs/search.js";
 import { offerUpdate } from "./components/update.js";
 import { offerRecap } from "./components/recap.js";
+import { offerCommunity } from "./components/community.js";
+import { COMMUNITY_URL } from "./links.js";
 import { watchNewVns } from "./components/new-vn.js";
 import { welcome } from "./components/welcome.js";
 import { loadLanguage, t, translateTree } from "./i18n.js";
@@ -59,6 +61,7 @@ for (const button of $$("nav button")) {
 }
 
 $("#pause-btn").onclick = () => call("set_paused", { paused: !store.snapshot.paused });
+$("#community-btn").onclick = () => call("open_url", { url: COMMUNITY_URL });
 $("#top-pause").onclick = () => call("set_paused", { paused: !store.snapshot.paused });
 $("#now-chip").onclick = () => show("home");
 $("#top-search").onclick = () => openSearch();
@@ -171,7 +174,8 @@ async function start() {
   if (!showedNotes) {
     show(state.pending_page || "home");
   }
-  if (store.settings.welcome_done === false) {
+  const firstRun = store.settings.welcome_done === false;
+  if (firstRun) {
     await welcome();
   }
   watchNewVns();
@@ -179,7 +183,10 @@ async function start() {
   if (store.settings.check_updates) {
     await offerUpdate();
   }
-  offerRecap();
+  const offeredRecap = await offerRecap();
+  if (!offeredRecap && !firstRun) {
+    offerCommunity();
+  }
 }
 
 start();
