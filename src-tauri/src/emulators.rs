@@ -36,7 +36,7 @@ static TRAILING_VERSION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\s+v?\d+(?:\.\d+)+\S*$").unwrap());
 static NOISE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)^v?\d[\d.]*\S*$|\b(?:fps|vps|vulkan|opengl|direct3d|d3d1[12]|directx|jit\w*|nvidia|amd|intel|geforce|radeon|64-bit|32-bit)\b|%",
+        r"(?i)^v?\d[\d.]*\S*$|^(?:emulation\s+)?(?:paused|running|stopped|suspended|booting|loading|idle|frame\s+advance)$|\b(?:fps|vps|vulkan|opengl|direct3d|d3d1[12]|directx|jit\w*|nvidia|amd|intel|geforce|radeon|64-bit|32-bit)\b|%",
     )
     .unwrap()
 });
@@ -162,6 +162,10 @@ mod tests {
         assert!(game(exe, "DeSmuME 0.9.13 x64 SSE2").is_none());
         let found = game(exe, "DeSmuME 0.9.13 x64 SSE2 | Tokimeki Memorial Girl's Side").unwrap();
         assert_eq!(found.1, "Tokimeki Memorial Girl's Side");
+        assert!(game(exe, "DeSmuME 0.9.13 x64 SSE2 | Paused").is_none());
+        let paused = game(exe, "DeSmuME 0.9.13 x64 SSE2 | Paused | Tokimeki Memorial Girl's Side").unwrap();
+        assert_eq!(paused.1, "Tokimeki Memorial Girl's Side");
+        assert!(game("melonDS.exe", "melonDS 0.9.5 - Emulation paused").is_none());
     }
 
     #[test]
