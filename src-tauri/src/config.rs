@@ -62,6 +62,7 @@ fn defaults() -> Map<String, Value> {
         "mascot_names": {},
         "mascot_personalities": {},
         "mascot_custom_lines": {},
+        "mascot_presets": {},
         "mascot_view_only": {},
         "mascot_click_hotkey": "",
         "mascot_chatter_minutes": 0,

@@ -5,6 +5,7 @@ use crate::lang;
 
 pub const DEFAULT: &str = "cheerful";
 pub const CUSTOM: &str = "custom";
+pub const PRESET: &str = "preset-";
 
 #[derive(Serialize)]
 pub struct Lines {

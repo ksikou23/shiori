@@ -1,4 +1,4 @@
-import { $, el, html } from "../dom.js";
+import { $, el, html, svg } from "../dom.js";
 import { fileUrl, pickFile, pickSaveFile } from "../tauri.js";
 import { register } from "../router.js";
 import { store, subscribe } from "../store.js";
@@ -252,124 +252,30 @@ function cutoutRow() {
   return el("div", { class: "field" }, el("span", {}, "AI model for cutouts (185 MB)"), remove);
 }
 
+const GEAR =
+  "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z";
+
 const pictureChanged = {};
 
-function card(item, personalities) {
+function pictureOf(item) {
   const fresh = pictureChanged[item.id] ? `?v=${pictureChanged[item.id]}` : "";
-  const picture = el("img", {
-    src: item.built_in ? "assets/mascot.png" : fileUrl(item.file) + fresh,
-    alt: "",
-    draggable: "false",
-  });
+  return item.built_in ? "assets/mascot.png" : fileUrl(item.file) + fresh;
+}
 
-  let remove = null;
-  if (!item.built_in) {
-    remove = el("button", { class: "btn danger small" });
-    confirmButton(remove, "Remove", () => call("remove_mascot", { id: item.id }));
-  }
+function gearIcon() {
+  const box = svg("svg", { viewBox: "0 0 24 24", class: "mascot-gear", "aria-hidden": "true" });
+  box.append(svg("path", { d: GEAR }));
+  return box;
+}
 
-  let changePicture = null;
-  if (!item.built_in) {
-    changePicture = el("button", { class: "btn secondary small" }, "Change picture…");
-    changePicture.onclick = async (event) => {
-      event.stopPropagation();
-      const path = await pickFile({ title: "Choose a mascot image", filters: MASCOT_IMAGE_FILTERS });
-      if (path) {
-        await call("change_mascot_image", { id: item.id, path });
-        pictureChanged[item.id] = Date.now();
-        load();
-      }
-    };
-  }
-
+function card(item, personalities) {
+  const picture = el("img", { src: pictureOf(item), alt: "", draggable: "false" });
   const flip = () => call("show_mascot", { id: item.id, shown: !item.shown });
 
-  const sizeText = (px) => t("Size: {px}px", { px });
-  const sizeLabel = el("span", { class: "small-text" }, sizeText(item.height));
-  const size = el("input", {
-    type: "range",
-    min: 120,
-    max: 1200,
-    step: 10,
-    value: item.height,
-    title: "Size",
-  });
-  size.onclick = (event) => event.stopPropagation();
-  size.oninput = () => (sizeLabel.textContent = sizeText(size.value));
-  size.onchange = () => call("set_mascot_size", { id: item.id, height: Number(size.value) });
-
-  const personality = el(
-    "select",
-    { title: "Personality: changes what this mascot says" },
-    ...[...personalities, { id: CUSTOM, name: t("Custom") }].map(({ id, name }) =>
-      el("option", { value: id, selected: id === item.personality }, name),
-    ),
-  );
-  const editLines = el("button", { class: "btn secondary small" }, "Write its lines…");
-  editLines.hidden = item.personality !== CUSTOM;
-  editLines.onclick = (event) => {
+  const settings = el("button", { class: "mascot-settings", title: "Settings", "aria-label": "Settings" }, gearIcon());
+  settings.onclick = (event) => {
     event.stopPropagation();
-    writeLines(item);
-  };
-  personality.onclick = (event) => event.stopPropagation();
-  personality.onchange = () => {
-    call("set_mascot_personality", { id: item.id, personality: personality.value });
-    editLines.hidden = personality.value !== CUSTOM;
-    if (personality.value === CUSTOM) {
-      writeLines(item);
-    }
-  };
-
-  const viewOnly = toggle(
-    "View only",
-    item.view_only,
-    (on) => {
-      item.view_only = on;
-      call("set_mascot_view_only", { id: item.id, viewOnly: on });
-    },
-    "Clicks go through it.",
-  );
-  viewOnly.onclick = (event) => event.stopPropagation();
-
-  const silent = toggle(
-    "Doesn't talk",
-    !!store.settings.mascot_silent?.[item.id],
-    (on) => {
-      const all = { ...(store.settings.mascot_silent || {}) };
-      if (on) {
-        all[item.id] = true;
-      } else {
-        delete all[item.id];
-      }
-      store.settings.mascot_silent = all;
-      call("update_settings", { changes: { mascot_silent: all } });
-    },
-    "No bubble or voice. The others talk instead.",
-  );
-  silent.onclick = (event) => event.stopPropagation();
-
-  const voices = el("button", { class: "btn secondary small" }, "Voices & moments…");
-  voices.onclick = (event) => {
-    event.stopPropagation();
-    editVoices(item);
-  };
-
-  const bubble = el("button", { class: "btn secondary small" }, "Bubble…");
-  bubble.onclick = (event) => {
-    event.stopPropagation();
-    editBalloon(item);
-  };
-
-  const rename = el("button", { class: "mascot-rename", title: "Rename" }, "✎");
-  rename.onclick = (event) => {
-    event.stopPropagation();
-    renameMascot(item);
-  };
-
-  const share = el("button", { class: "btn secondary small" }, "Share…");
-  share.onclick = (event) => {
-    event.stopPropagation();
-    shareMascot(item);
+    mascotSettings(item, personalities);
   };
 
   return el(
@@ -388,53 +294,295 @@ function card(item, personalities) {
     el("div", { class: "mascot-pic" }, picture),
     el(
       "div",
-      { class: "mascot-meta" },
-      el("div", { class: "mascot-name" }, el("b", {}, item.name), rename),
-      el("span", { class: "small-text" }, item.shown ? "On your desktop" : "Click to show"),
-      el("div", { class: "mascot-size" }, sizeLabel, size),
+      { class: "mascot-foot" },
       el(
         "div",
-        { class: "mascot-size" },
-        el("span", { class: "small-text" }, "Personality"),
-        personality,
-        editLines,
-        voices,
-        bubble,
+        { class: "mascot-meta" },
+        el("b", {}, item.name),
+        el("span", { class: "small-text" }, item.shown ? "On your desktop" : "Click to show"),
       ),
-      el("div", { class: "mascot-size" }, viewOnly),
-      el("div", { class: "mascot-size" }, silent),
-      el("div", { class: "row" }, share, changePicture, remove),
+      settings,
     ),
   );
 }
 
-async function writeLines(item) {
-  const defaults = await call("personality_lines", { personality: "cheerful" });
-  const saved = item.custom || {};
+async function mascotSettings(item, personalities) {
+  let close = () => {};
+  let shown = item.shown;
 
+  const picture = el("img", { src: pictureOf(item), alt: "", draggable: "false" });
+  const stage = el("div", { class: "balloon-stage mascot-stage" }, picture);
+
+  const showButton = el("button", { class: "btn" });
+  const paintShow = () => {
+    showButton.textContent = t(shown ? "Take it off the desktop" : "Put it on the desktop");
+    showButton.classList.toggle("secondary", shown);
+  };
+  showButton.onclick = () => {
+    shown = !shown;
+    paintShow();
+    call("show_mascot", { id: item.id, shown });
+  };
+  paintShow();
+
+  let changePicture = null;
+  if (!item.built_in) {
+    changePicture = el("button", { class: "btn secondary small" }, "Change picture…");
+    changePicture.onclick = async () => {
+      const path = await pickFile({ title: "Choose a mascot image", filters: MASCOT_IMAGE_FILTERS });
+      if (path) {
+        await call("change_mascot_image", { id: item.id, path });
+        pictureChanged[item.id] = Date.now();
+        picture.src = pictureOf(item);
+      }
+    };
+  }
+
+  const name = el("input", { type: "text", maxlength: 60 });
+  name.value = t(item.name);
+  name.onchange = async () => {
+    const value = name.value.trim();
+    if (!value) {
+      name.value = t(item.name);
+      return;
+    }
+    if (value !== t(item.name)) {
+      await call("rename_mascot", { id: item.id, name: value });
+      item.name = value;
+    }
+  };
+  name.onkeydown = (event) => {
+    if (event.key === "Enter") {
+      name.blur();
+    }
+  };
+
+  const sizeLabel = el("span", { class: "muted" }, `${item.height}px`);
+  const size = el("input", { type: "range", min: 120, max: 1200, step: 10, value: item.height });
+  size.oninput = () => (sizeLabel.textContent = `${size.value}px`);
+  size.onchange = () => {
+    item.height = Number(size.value);
+    call("set_mascot_size", { id: item.id, height: item.height });
+  };
+
+  const personality = el("select", {});
+  const editLines = el("button", { class: "btn secondary small" });
+  const paintLines = () => {
+    const id = personality.value;
+    editLines.textContent = t(id === CUSTOM ? "Write its lines…" : isPreset(id) ? "Edit preset…" : "See its lines");
+  };
+  const refreshChoices = () => {
+    if (isPreset(item.personality) && !presets()[item.personality]) {
+      item.personality = "cheerful";
+    }
+    personality.replaceChildren(
+      ...personalityChoices(personalities).map(({ id, name }) =>
+        el("option", { value: id, selected: id === item.personality }, name),
+      ),
+    );
+    paintLines();
+  };
+  editLines.onclick = async () => {
+    const id = personality.value;
+    if (id === CUSTOM) {
+      await writeLines(item, personalities);
+    } else if (isPreset(id)) {
+      await editPreset(id, personalities);
+    } else {
+      await viewLines(item, id, personalities);
+    }
+    refreshChoices();
+  };
+  personality.onchange = async () => {
+    await setPersonality(item, personality.value);
+    paintLines();
+    if (personality.value === CUSTOM) {
+      await writeLines(item, personalities);
+      refreshChoices();
+    }
+  };
+  refreshChoices();
+
+  const silent = toggle(
+    "Doesn't talk",
+    !!store.settings.mascot_silent?.[item.id],
+    (on) => {
+      const all = { ...(store.settings.mascot_silent || {}) };
+      if (on) {
+        all[item.id] = true;
+      } else {
+        delete all[item.id];
+      }
+      store.settings.mascot_silent = all;
+      call("update_settings", { changes: { mascot_silent: all } });
+    },
+    "No bubble or voice. The others talk instead.",
+  );
+
+  const viewOnly = toggle(
+    "View only",
+    item.view_only,
+    (on) => {
+      item.view_only = on;
+      call("set_mascot_view_only", { id: item.id, viewOnly: on });
+    },
+    "Clicks go through it.",
+  );
+
+  const voices = el("button", { class: "btn secondary small" }, "Voices & moments…");
+  voices.onclick = () => editVoices(item);
+  const bubble = el("button", { class: "btn secondary small" }, "Bubble…");
+  bubble.onclick = () => editBalloon(item);
+  const share = el("button", { class: "btn secondary small" }, "Share…");
+  share.onclick = () => shareMascot(item);
+
+  let remove = null;
+  if (!item.built_in) {
+    remove = el("button", { class: "btn danger small" });
+    confirmButton(remove, "Remove", async () => {
+      await call("remove_mascot", { id: item.id });
+      close(null);
+    });
+  }
+
+  const controls = el(
+    "div",
+    { class: "balloon-controls mascot-controls" },
+    el("div", { class: "field-label" }, "Name"),
+    name,
+    el("div", { class: "field" }, el("span", {}, "Size"), el("div", { class: "row" }, size, sizeLabel)),
+    el("div", { class: "field" }, el("span", {}, "Personality"), personality),
+    el("div", { class: "row" }, editLines),
+    el("div", { class: "field-label" }, "Talking"),
+    silent,
+    el("div", { class: "row" }, voices, bubble),
+    el("div", { class: "field-label" }, "On the desktop"),
+    viewOnly,
+    el("div", { class: "row mascot-extra" }, share, changePicture, remove),
+  );
+
+  await openDialog({
+    title: t("{name}'s settings", { name: t(item.name) }),
+    width: 860,
+    body: el(
+      "div",
+      { class: "balloon-editor mascot-editor" },
+      el("div", { class: "balloon-left" }, stage, showButton),
+      controls,
+    ),
+    actions: [{ label: "Done", value: true }],
+    onOpen: (finish) => (close = finish),
+  });
+  load();
+}
+
+const ALL_LINE_FIELDS = [...LINE_FIELDS, ...LIST_FIELDS];
+const PRESET = "preset-";
+
+const asList = (value) => (Array.isArray(value) ? value : value ? [value] : []);
+const rowsFor = (count) => Math.min(8, Math.max(2, count + 1));
+const presets = () => store.settings.mascot_presets || {};
+const isPreset = (id) => id.startsWith(PRESET);
+
+function personalityChoices(personalities) {
+  return [
+    ...personalities,
+    ...Object.entries(presets()).map(([id, preset]) => ({ id, name: preset.name })),
+    { id: CUSTOM, name: t("Custom") },
+  ];
+}
+
+function linesEditor(defaults, values) {
   const inputs = {};
-  const fields = LINE_FIELDS.map(([key, label, hint]) => {
-    inputs[key] = el("input", { type: "text", value: saved[key] || "", placeholder: defaults[key] });
+  const fit = (input) => (input.rows = rowsFor(input.value.split("\n").filter(Boolean).length));
+  const fields = ALL_LINE_FIELDS.map(([key, label, hint]) => {
+    const input = el("textarea", { placeholder: asList(defaults[key]).join("\n") });
+    input.value = asList(values[key]).join("\n");
+    input.oninput = () => fit(input);
+    fit(input);
+    inputs[key] = input;
     return el(
       "label",
       { class: "line-field" },
       el("span", {}, label),
-      inputs[key],
+      input,
       hint && el("span", { class: "small-text muted" }, hint),
     );
   });
-  const lists = LIST_FIELDS.map(([key, label, hint]) => {
-    inputs[key] = el("textarea", { rows: 4, placeholder: (defaults[key] || []).join("\n") });
-    inputs[key].value = (saved[key] || []).join("\n");
-    return el(
-      "label",
-      { class: "line-field" },
-      el("span", {}, label),
-      inputs[key],
-      el("span", { class: "small-text muted" }, "One per line, picked at random."),
-      hint && el("span", { class: "small-text muted" }, hint),
-    );
+  const fill = (lines) => {
+    for (const [key] of ALL_LINE_FIELDS) {
+      inputs[key].value = asList(lines[key]).join("\n");
+      fit(inputs[key]);
+    }
+  };
+  const read = () => {
+    const lines = {};
+    for (const [key] of ALL_LINE_FIELDS) {
+      lines[key] = inputs[key].value
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    }
+    return lines;
+  };
+  return { fields, fill, read };
+}
+
+function startFrom(personalities, editor) {
+  const picker = el(
+    "select",
+    {},
+    el("option", { value: "" }, t("Copy the lines of…")),
+    ...personalityChoices(personalities)
+      .filter(({ id }) => id !== CUSTOM)
+      .map(({ id, name }) => el("option", { value: id }, name)),
+  );
+  picker.onchange = async () => {
+    if (picker.value) {
+      editor.fill(await call("personality_lines", { personality: picker.value }));
+      picker.value = "";
+    }
+  };
+  return el("div", { class: "row lines-tools" }, picker);
+}
+
+async function askPresetName(fallback = "") {
+  const input = el("input", { type: "text", maxlength: 40, style: { width: "100%", boxSizing: "border-box" } });
+  input.value = fallback;
+  const answer = await openDialog({
+    title: "Name this preset",
+    body: el(
+      "div",
+      { class: "line-fields" },
+      el("p", { class: "muted small-text" }, "It shows up in the Personality list of every mascot."),
+      input,
+    ),
+    actions: [
+      { label: "Cancel", kind: "secondary", value: null },
+      { label: "Save", value: "save" },
+    ],
+    onOpen: (finish) => {
+      input.select();
+      input.addEventListener("keydown", (event) => event.key === "Enter" && finish("save"));
+    },
   });
+  const name = input.value.trim();
+  return answer === "save" && name ? name : null;
+}
+
+async function savePresets(all) {
+  store.settings.mascot_presets = all;
+  await call("update_settings", { changes: { mascot_presets: all } });
+}
+
+async function setPersonality(item, personality) {
+  item.personality = personality;
+  await call("set_mascot_personality", { id: item.id, personality });
+}
+
+async function writeLines(item, personalities, start = null) {
+  const defaults = await call("personality_lines", { personality: "cheerful" });
+  const editor = linesEditor(defaults, start || item.custom || {});
 
   const answer = await openDialog({
     title: t("{name}'s lines", { name: t(item.name) }),
@@ -442,35 +590,113 @@ async function writeLines(item) {
     body: el(
       "div",
       { class: "line-fields" },
-      el(
-        "p",
-        { class: "muted small-text" },
-        "Leave a line empty to keep the one shown in grey.",
-      ),
-      ...fields,
-      ...lists,
+      el("p", { class: "muted small-text" }, "One line per row: with several, one is picked at random. Leave a box empty to keep the lines shown in grey."),
+      startFrom(personalities, editor),
+      ...editor.fields,
     ),
     actions: [
+      { label: "Cancel", kind: "secondary", value: null },
+      { label: "Save as a preset…", kind: "secondary", value: "preset" },
+      { label: "Save", value: "save" },
+    ],
+  });
+  if (!answer) {
+    return false;
+  }
+  const lines = editor.read();
+  if (answer === "preset") {
+    const name = await askPresetName();
+    if (!name) {
+      return false;
+    }
+    const id = `${PRESET}${Date.now().toString(36)}`;
+    await savePresets({ ...presets(), [id]: { name, lines } });
+    await setPersonality(item, id);
+    toast(t("Preset “{name}” saved", { name }));
+    return true;
+  }
+  await call("set_mascot_custom_lines", { id: item.id, lines });
+  item.custom = lines;
+  return true;
+}
+
+async function editPreset(id, personalities) {
+  const preset = presets()[id];
+  if (!preset) {
+    return false;
+  }
+  const defaults = await call("personality_lines", { personality: "cheerful" });
+  const editor = linesEditor(defaults, preset.lines || {});
+  const name = el("input", { type: "text", maxlength: 40 });
+  name.value = preset.name;
+
+  const answer = await openDialog({
+    title: t("Preset “{name}”", { name: preset.name }),
+    wide: true,
+    body: el(
+      "div",
+      { class: "line-fields" },
+      el("label", { class: "line-field" }, el("span", {}, "Name"), name),
+      el("p", { class: "muted small-text" }, "Every mascot with this preset uses these lines. One line per row: with several, one is picked at random."),
+      startFrom(personalities, editor),
+      ...editor.fields,
+    ),
+    actions: [
+      { label: "Delete preset", kind: "danger", value: "delete" },
       { label: "Cancel", kind: "secondary", value: null },
       { label: "Save", value: "save" },
     ],
   });
-  if (answer !== "save") {
-    return;
+  const all = { ...presets() };
+  if (answer === "delete") {
+    delete all[id];
+    const chosen = { ...(store.settings.mascot_personalities || {}) };
+    for (const [mascot, personality] of Object.entries(chosen)) {
+      if (personality === id) {
+        chosen[mascot] = "cheerful";
+      }
+    }
+    store.settings.mascot_personalities = chosen;
+    store.settings.mascot_presets = all;
+    await call("update_settings", { changes: { mascot_presets: all, mascot_personalities: chosen } });
+    return true;
   }
+  if (answer === "save") {
+    all[id] = { name: name.value.trim() || preset.name, lines: editor.read() };
+    await savePresets(all);
+    return true;
+  }
+  return false;
+}
 
-  const lines = {};
-  for (const [key] of LINE_FIELDS) {
-    lines[key] = inputs[key].value.trim();
+async function viewLines(item, personality, personalities) {
+  const lines = await call("personality_lines", { personality });
+  const name = personalities.find(({ id }) => id === personality)?.name || personality;
+  const sections = ALL_LINE_FIELDS.map(([key, label]) =>
+    el(
+      "div",
+      { class: "line-view" },
+      el("b", {}, label),
+      el("ul", {}, ...asList(lines[key]).map((line) => el("li", {}, line))),
+    ),
+  );
+  const answer = await openDialog({
+    title: t("{name}'s lines", { name: t(name) }),
+    wide: true,
+    body: el("div", { class: "line-fields" }, ...sections),
+    actions: [
+      { label: "Close", kind: "secondary", value: null },
+      { label: "Edit a copy…", value: "copy" },
+    ],
+  });
+  if (answer !== "copy") {
+    return false;
   }
-  for (const [key] of LIST_FIELDS) {
-    lines[key] = inputs[key].value
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
+  const saved = await writeLines(item, personalities, lines);
+  if (saved && !isPreset(item.personality)) {
+    await setPersonality(item, CUSTOM);
   }
-  await call("set_mascot_custom_lines", { id: item.id, lines });
-  item.custom = lines;
+  return saved;
 }
 
 const fileName = (path) => path.split(/[\\/]/).pop();
@@ -567,9 +793,9 @@ async function editVoices(item) {
       el(
         "p",
         { class: "muted small-text" },
-        "Sounds play with what the mascot says. For “When you click it” and “Now and then”, sounds go " +
+        "Sounds play with what the mascot says. When a moment has several lines, sounds go " +
           "with the lines in order: the 1st sound (by file name) with the 1st line, and so on. " +
-          "Elsewhere, one is picked at random.",
+          "Otherwise, one is picked at random.",
       ),
       el("p", { class: "muted small-text" }, "Untick a moment to keep this mascot quiet then: the others talk instead."),
       volume,
@@ -860,31 +1086,6 @@ async function editBalloon(item) {
   }
   store.settings.mascot_balloons = balloons;
   await call("update_settings", { changes: { mascot_balloons: balloons } });
-}
-
-async function renameMascot(item) {
-  const input = el("input", { type: "text", maxlength: 60, style: { width: "100%", boxSizing: "border-box" } });
-  input.value = t(item.name);
-  const answer = await openDialog({
-    title: "Rename this mascot",
-    body: input,
-    actions: [
-      { label: "Cancel", kind: "secondary", value: null },
-      { label: "Save", value: "save" },
-    ],
-    onOpen: (finish) => {
-      input.select();
-      input.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          finish("save");
-        }
-      });
-    },
-  });
-  const name = input.value.trim();
-  if (answer === "save" && name && name !== t(item.name)) {
-    await call("rename_mascot", { id: item.id, name });
-  }
 }
 
 async function shareMascot(item) {

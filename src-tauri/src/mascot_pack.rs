@@ -47,14 +47,19 @@ pub fn export(shared: &Shared, id: &str, dest: &Path) -> Result<(), String> {
     };
     let name = mascot::name_of(shared, id);
     let image_name = format!("image.{ext}");
+    let personality = mascot::personality_of(shared, id);
+    let (personality, lines) = match mascot::preset_lines(shared, &personality) {
+        Some(lines) => (personalities::CUSTOM.to_string(), lines),
+        None => (personality, mascot::custom_lines_of(shared, id)),
+    };
     let manifest = json!({
         "format": FORMAT,
         "app_version": env!("CARGO_PKG_VERSION"),
         "name": name,
         "image": image_name,
         "height": mascot::height_for(shared, id),
-        "personality": mascot::personality_of(shared, id),
-        "lines": mascot::custom_lines_of(shared, id),
+        "personality": personality,
+        "lines": lines,
         "view_only": mascot::view_only_of(shared, id),
         "balloon": mascot::setting_for(shared, BALLOONS, id),
         "voice_volume": mascot::setting_for(shared, VOLUMES, id),

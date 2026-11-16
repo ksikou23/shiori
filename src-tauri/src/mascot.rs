@@ -1057,13 +1057,34 @@ pub fn set_custom_lines(shared: &Shared, id: &str, lines: Value) {
     save_settings(shared, Map::from_iter([("mascot_custom_lines".into(), Value::Object(all))]));
 }
 
+pub(crate) fn preset_lines(shared: &Shared, personality: &str) -> Option<Value> {
+    if !personality.starts_with(personalities::PRESET) {
+        return None;
+    }
+    shared
+        .config
+        .lock()
+        .unwrap()
+        .get("mascot_presets")
+        .and_then(|all| all.get(personality))
+        .and_then(|preset| preset.get("lines"))
+        .cloned()
+}
+
+pub(crate) fn personality_lines(shared: &Shared, personality: &str, language: &str) -> Lines {
+    match preset_lines(shared, personality) {
+        Some(own) => personalities::custom(personalities::lines(personalities::DEFAULT, language), &own),
+        None => personalities::lines(personality, language),
+    }
+}
+
 fn lines_for(shared: &Shared, id: &str, language: &str) -> Lines {
     let personality = personality_of(shared, id);
     if personality == personalities::CUSTOM {
         let base = personalities::lines(personalities::DEFAULT, language);
         personalities::custom(base, &custom_lines_of(shared, id))
     } else {
-        personalities::lines(&personality, language)
+        personality_lines(shared, &personality, language)
     }
 }
 

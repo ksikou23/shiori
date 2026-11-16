@@ -141,7 +141,7 @@ pub fn set_mascot_personality(shared: SharedState, id: String, personality: Stri
 #[tauri::command(async)]
 pub fn personality_lines(shared: SharedState, personality: String) -> crate::personalities::Lines {
     let language = crate::lang::resolve(&shared.config.lock().unwrap().str("language"));
-    crate::personalities::lines(&personality, language)
+    mascot::personality_lines(&shared, &personality, language)
 }
 
 #[tauri::command(async)]

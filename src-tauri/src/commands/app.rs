@@ -46,7 +46,7 @@ pub fn update_settings(
             changes.insert(name.into(), json!(normalized));
         }
     }
-    const NOT_ON_SCREEN: [&str; 9] = [
+    const NOT_ON_SCREEN: [&str; 10] = [
         "mascot_hide_apps",
         "mascot_muted_moments",
         "mascot_hide_fullscreen",
@@ -56,6 +56,7 @@ pub fn update_settings(
         "mascot_voice_volume",
         "mascot_voice_volumes",
         "mascot_click_hotkey",
+        "mascot_presets",
     ];
     crate::crash::note(format!(
         "settings: {}",
