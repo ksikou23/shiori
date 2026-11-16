@@ -24,6 +24,12 @@ static RELEASE_DATE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b\d{4}-\d{2}-\d{2}\b").unwrap());
 static HTML_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<[^>]*>").unwrap());
 static INPUT_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<input\b([^>]*)>").unwrap());
+static SELECT_TAG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<select\b([^>]*)>(.*?)</select>").unwrap());
+static OPTION_TAG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<option\b([^>]*)>").unwrap());
+static SELECTED_ATTRIBUTE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:^|\s)selected(?:\s|=|$)").unwrap());
 static ATTRIBUTE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?is)([a-z_:][a-z0-9_:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#).unwrap()
 });
@@ -49,6 +55,24 @@ pub struct GameDetails {
     pub erogamescape_name: String,
     pub erogamescape_furigana: String,
     pub erogamescape_brand_id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_dlsite_domain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_dlsite_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_fanza_big_genre: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_fanza_small_genre: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_fanza_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_steam_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_surugaya_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_booth_subdomain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_booth_id: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Serialize)]
@@ -203,6 +227,15 @@ fn parse_details(id: u64, game_page: &str, mod_page: &str) -> Result<GameDetails
         erogamescape_name: clean_text(&name),
         erogamescape_furigana: clean_text(&furigana),
         erogamescape_brand_id: brand_id,
+        store_dlsite_domain: optional_select_value(mod_page, "dlsite_domain")?,
+        store_dlsite_id: optional_input_value(mod_page, "dlsite_id"),
+        store_fanza_big_genre: optional_select_value(mod_page, "dmm_genre")?,
+        store_fanza_small_genre: optional_select_value(mod_page, "dmm_genre_2")?,
+        store_fanza_id: optional_input_value(mod_page, "dmm"),
+        store_steam_id: optional_input_value(mod_page, "steam"),
+        store_surugaya_id: optional_input_value(mod_page, "surugaya_1"),
+        store_booth_subdomain: optional_input_value(mod_page, "booth_sub_domain"),
+        store_booth_id: optional_input_value(mod_page, "booth_item_id"),
     })
 }
 
@@ -233,6 +266,51 @@ fn input_value(html: &str, name: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn optional_input_value(html: &str, name: &str) -> Option<String> {
+    optional_value(input_value(html, name))
+}
+
+fn optional_value(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| clean_text(&value))
+        .filter(|value| !value.is_empty())
+}
+
+fn optional_select_value(html: &str, name: &str) -> Result<Option<String>, String> {
+    for select in SELECT_TAG.captures_iter(html) {
+        let select = select.map_err(|error| error.to_string())?;
+        let Some(attributes) = select.get(1).map(|capture| capture.as_str()) else {
+            continue;
+        };
+        if attribute(attributes, "name").as_deref() != Some(name) {
+            continue;
+        }
+
+        let Some(contents) = select.get(2).map(|capture| capture.as_str()) else {
+            continue;
+        };
+        let mut first_value = None;
+        for option in OPTION_TAG.captures_iter(contents) {
+            let option = option.map_err(|error| error.to_string())?;
+            let Some(attributes) = option.get(1).map(|capture| capture.as_str()) else {
+                continue;
+            };
+            let value = attribute(attributes, "value").unwrap_or_default();
+            if first_value.is_none() {
+                first_value = Some(value.clone());
+            }
+            if SELECTED_ATTRIBUTE
+                .is_match(attributes)
+                .map_err(|error| error.to_string())?
+            {
+                return Ok(optional_value(Some(value)));
+            }
+        }
+        return Ok(optional_value(first_value));
+    }
+    Ok(None)
 }
 
 fn attribute(attributes: &str, name: &str) -> Option<String> {
@@ -388,12 +466,48 @@ mod tests {
             <input name="game" value="15425">
             <input name="gamename" value="はつゆきさくら">
             <input name="furigana" value="ハツユキサクラ">
+            <select name="dlsite_domain"><option value="">-</option><option value="maniax" selected="selected">成人向け</option></select>
+            <input name="dlsite_id" value="VJ123456">
+            <select name="dmm_genre"><option value="">-</option><option value="digital" selected="selected">ダウンロード</option></select>
+            <select name="dmm_genre_2"><option value="">-<option value="pcgame" selected="selected">PC</select>
+            <input name="dmm" value="game_123">
+            <input name="steam" value="3818900">
+            <input name="surugaya_1" value="186500980">
+            <input name="booth_sub_domain" value="totometori">
+            <input name="booth_item_id" value="8638284">
         "#;
 
         let details = parse_details(15425, game_page, mod_page).unwrap();
         assert_eq!(details.erogamescape_name, "はつゆきさくら");
         assert_eq!(details.erogamescape_furigana, "ハツユキサクラ");
         assert_eq!(details.erogamescape_brand_id, 114);
+        assert_eq!(details.store_dlsite_domain.as_deref(), Some("maniax"));
+        assert_eq!(details.store_dlsite_id.as_deref(), Some("VJ123456"));
+        assert_eq!(details.store_fanza_big_genre.as_deref(), Some("digital"));
+        assert_eq!(details.store_fanza_small_genre.as_deref(), Some("pcgame"));
+        assert_eq!(details.store_fanza_id.as_deref(), Some("game_123"));
+        assert_eq!(details.store_steam_id.as_deref(), Some("3818900"));
+        assert_eq!(details.store_surugaya_id.as_deref(), Some("186500980"));
+        assert_eq!(details.store_booth_subdomain.as_deref(), Some("totometori"));
+        assert_eq!(details.store_booth_id.as_deref(), Some("8638284"));
+    }
+
+    #[test]
+    fn optional_store_fields_can_be_empty_or_missing() {
+        let game_page =
+            r#"<tr id="brand"><td><a href="brand.php?brand=114">SAGA PLANETS</a></td></tr>"#;
+        let mod_page = r#"
+            <input name="game" value="15425">
+            <input name="gamename" value="はつゆきさくら">
+            <input name="furigana" value="ハツユキサクラ">
+            <input name="steam" value="">
+            <select name="dlsite_domain"><option value="">-</option><option value="maniax">成人向け</option></select>
+        "#;
+
+        let details = parse_details(15425, game_page, mod_page).unwrap();
+        assert!(details.store_steam_id.is_none());
+        assert!(details.store_dlsite_domain.is_none());
+        assert!(details.store_booth_id.is_none());
     }
 
     #[test]

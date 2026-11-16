@@ -15,6 +15,18 @@ use crate::vndb::VnResult;
 use crate::vndb_list;
 use wana_kana::ConvertJapanese;
 
+const EROGAMESCAPE_STORE_FIELDS: [&str; 9] = [
+    "store_dlsite_domain",
+    "store_dlsite_id",
+    "store_fanza_big_genre",
+    "store_fanza_small_genre",
+    "store_fanza_id",
+    "store_steam_id",
+    "store_surugaya_id",
+    "store_booth_subdomain",
+    "store_booth_id",
+];
+
 fn text(entry: &Entry, field: &str) -> String {
     entry
         .get(field)
@@ -441,7 +453,41 @@ pub async fn confirm_erogamescape(
             "erogamescape_brand_id".into(),
             json!(details.erogamescape_brand_id),
         );
+        let store_fields = [
+            (
+                "store_dlsite_domain",
+                details.store_dlsite_domain.as_deref(),
+            ),
+            ("store_dlsite_id", details.store_dlsite_id.as_deref()),
+            (
+                "store_fanza_big_genre",
+                details.store_fanza_big_genre.as_deref(),
+            ),
+            (
+                "store_fanza_small_genre",
+                details.store_fanza_small_genre.as_deref(),
+            ),
+            ("store_fanza_id", details.store_fanza_id.as_deref()),
+            ("store_steam_id", details.store_steam_id.as_deref()),
+            ("store_surugaya_id", details.store_surugaya_id.as_deref()),
+            (
+                "store_booth_subdomain",
+                details.store_booth_subdomain.as_deref(),
+            ),
+            ("store_booth_id", details.store_booth_id.as_deref()),
+        ];
+        for &(field, value) in &store_fields {
+            if let Some(value) = value {
+                fields.insert(field.into(), json!(value));
+            }
+        }
+
         let mut cfg = shared.config.lock().unwrap();
+        for &(field, value) in &store_fields {
+            if value.is_none() {
+                cfg.remove_game_field(&key, field);
+            }
+        }
         cfg.set_game(&key, fields);
         drop(cfg);
 
@@ -509,6 +555,9 @@ pub fn update_game(
                 "erogamescape_furigana",
                 "erogamescape_brand_id",
             ] {
+                cfg.remove_game_field(&key, field);
+            }
+            for field in EROGAMESCAPE_STORE_FIELDS {
                 cfg.remove_game_field(&key, field);
             }
         }
