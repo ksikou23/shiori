@@ -230,14 +230,12 @@ pub fn apply(activity: &mut Activity, custom: &Value, vars: &Vars, session_start
     activity.large_text = fill(field(custom, "large_text"), vars);
 
     activity.small_image = match field(custom, "small_icon") {
-        "app" => APP_ICON.to_string(),
         url if url.starts_with("https://") || url.starts_with("http://") => url.to_string(),
-        _ => String::new(),
+        _ => APP_ICON.to_string(),
     };
-    activity.small_text = if activity.small_image.is_empty() {
-        String::new()
-    } else {
-        fill(field(custom, "small_text"), vars)
+    activity.small_text = match field(custom, "small_icon") {
+        "" => "Shiori".to_string(),
+        _ => fill(field(custom, "small_text"), vars),
     };
 
     activity.start = match field(custom, "timer") {

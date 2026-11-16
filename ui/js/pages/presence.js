@@ -89,7 +89,7 @@ const TEMPLATE = `
           <span>Small icon on the cover</span>
           <div class="pb-row">
             <select data-id="icon">
-              <option value="">None</option>
+              <option value="">Default</option>
               <option value="app">App logo</option>
               <option value="url">Image link…</option>
             </select>
