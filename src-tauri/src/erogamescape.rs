@@ -224,8 +224,8 @@ fn parse_details(id: u64, game_page: &str, mod_page: &str) -> Result<GameDetails
         .ok_or_else(|| "couldn't find the brand ID on ErogameScape's game page".to_string())?;
     Ok(GameDetails {
         erogamescape_id: id,
-        erogamescape_name: clean_text(&name),
-        erogamescape_furigana: clean_text(&furigana),
+        erogamescape_name: normalize_text(&name),
+        erogamescape_furigana: normalize_text(&furigana),
         erogamescape_brand_id: brand_id,
         store_dlsite_domain: optional_select_value(mod_page, "dlsite_domain")?,
         store_dlsite_id: optional_input_value(mod_page, "dlsite_id"),
@@ -253,8 +253,8 @@ fn parse_brand_details(id: u64, page: &str) -> Result<BrandDetails, String> {
     let furigana = input_value(page, "brandfurigana").unwrap_or_default();
     Ok(BrandDetails {
         id,
-        name: clean_text(&name),
-        furigana: clean_text(&furigana),
+        name: normalize_text(&name),
+        furigana: normalize_text(&furigana),
     })
 }
 
@@ -262,7 +262,8 @@ fn input_value(html: &str, name: &str) -> Option<String> {
     for input in INPUT_TAG.captures_iter(html).flatten() {
         let attributes = input.get(1)?.as_str();
         if attribute(attributes, "name").as_deref() == Some(name) {
-            return attribute(attributes, "value").map(|value| decode_entities(&value));
+            return attribute(attributes, "value")
+                .map(|value| html_escape::decode_html_entities(&value).into_owned());
         }
     }
     None
@@ -274,7 +275,7 @@ fn optional_input_value(html: &str, name: &str) -> Option<String> {
 
 fn optional_value(value: Option<String>) -> Option<String> {
     value
-        .map(|value| clean_text(&value))
+        .map(|value| normalize_text(&value))
         .filter(|value| !value.is_empty())
 }
 
@@ -297,7 +298,9 @@ fn optional_select_value(html: &str, name: &str) -> Result<Option<String>, Strin
             let Some(attributes) = option.get(1).map(|capture| capture.as_str()) else {
                 continue;
             };
-            let value = attribute(attributes, "value").unwrap_or_default();
+            let value = attribute(attributes, "value")
+                .map(|value| html_escape::decode_html_entities(&value).into_owned())
+                .unwrap_or_default();
             if first_value.is_none() {
                 first_value = Some(value.clone());
             }
@@ -385,19 +388,13 @@ fn parse_results(html: &str) -> Result<Vec<GameResult>, String> {
 
 fn clean_text(html: &str) -> String {
     let text = HTML_TAG.replace_all(html, " ");
-    decode_entities(&text)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    normalize_text(&html_escape::decode_html_entities(&text))
 }
 
-fn decode_entities(text: &str) -> String {
-    text.replace("&amp;", "&")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&#039;", "'")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
+fn normalize_text(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -490,6 +487,52 @@ mod tests {
         assert_eq!(details.store_surugaya_id.as_deref(), Some("186500980"));
         assert_eq!(details.store_booth_subdomain.as_deref(), Some("totometori"));
         assert_eq!(details.store_booth_id.as_deref(), Some("8638284"));
+    }
+
+    #[test]
+    fn decodes_entities_once_in_game_details_and_search_results() {
+        let game_page = r#"<tr id="brand"><td><a href="brand.php?brand=114">Studio</a></td></tr>"#;
+        let mod_page = r#"
+            <input name="game" value="27478">
+            <input name="gamename" value="スタディ&sect;ステディ">
+            <input name="furigana" value="スタディステディ">
+        "#;
+        let details = parse_details(27478, game_page, mod_page).unwrap();
+        assert_eq!(details.erogamescape_name, "スタディ§ステディ");
+
+        let search_page = r#"
+            <tr><td><a href="game.php?game=27478">スタディ&sect;ステディ</a></td></tr>
+        "#;
+        let results = parse_results(search_page).unwrap();
+        assert_eq!(results[0].title, "スタディ§ステディ");
+
+        let search_page = r#"
+            <tr><td><a href="game.php?game=27478">Game &lt;Special&gt; &amp;sect; &#167; &#xA7;</a></td></tr>
+        "#;
+        let results = parse_results(search_page).unwrap();
+        assert_eq!(results[0].title, "Game <Special> &sect; § §");
+    }
+
+    #[test]
+    fn decodes_entities_once_in_brand_and_store_values() {
+        let brand_page = r#"
+            <input name="brand" value="1171">
+            <input name="brandname" value="A &lt;B&gt; &amp;sect;">
+        "#;
+        let brand = parse_brand_details(1171, brand_page).unwrap();
+        assert_eq!(brand.name, "A <B> &sect;");
+
+        let game_page = r#"<tr id="brand"><td><a href="brand.php?brand=114">Studio</a></td></tr>"#;
+        let mod_page = r#"
+            <input name="game" value="27478">
+            <input name="gamename" value="Game">
+            <input name="furigana" value="Game">
+            <input name="dlsite_id" value="A&amp;sect;">
+            <select name="dlsite_domain"><option value="A&amp;sect;" selected>Test</option></select>
+        "#;
+        let details = parse_details(27478, game_page, mod_page).unwrap();
+        assert_eq!(details.store_dlsite_id.as_deref(), Some("A&sect;"));
+        assert_eq!(details.store_dlsite_domain.as_deref(), Some("A&sect;"));
     }
 
     #[test]
