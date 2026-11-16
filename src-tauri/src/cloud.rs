@@ -379,6 +379,14 @@ fn vndb_id(entry: &Map<String, Value>) -> Option<String> {
         .find(|id| !id.is_empty())
 }
 
+fn average_seconds(shared: &Shared, entry: &Map<String, Value>) -> i64 {
+    vndb_id(entry)
+        .and_then(|id| shared.vndb.cached_raw(&id))
+        .and_then(|raw| raw["length_minutes"].as_i64())
+        .filter(|minutes| *minutes > 0)
+        .map_or(0, |minutes| minutes * 60)
+}
+
 fn vn_card(shared: &Shared, key: &str, entry: &Map<String, Value>, fetch: bool) -> Map<String, Value> {
     let title: String = crate::screenshots::display_name(key, entry).chars().take(80).collect();
     let mut card = Map::from_iter([("k".to_string(), json!(short_key(key))), ("t".to_string(), json!(title))]);
@@ -412,6 +420,10 @@ pub fn profile_payload(shared: &Shared, fetch: bool) -> Value {
             continue;
         }
         let mut card = vn_card(shared, key, entry, fetch);
+        let seconds = match status.as_str() {
+            "finished" if seconds < 60 => average_seconds(shared, entry).max(seconds),
+            _ => seconds,
+        };
         card.insert("s".into(), json!(status));
         card.insert("p".into(), json!(seconds.max(0)));
         for (field, short) in [("vndb_vote", "u"), ("last_played", "lp"), ("finished_at", "fa")] {
