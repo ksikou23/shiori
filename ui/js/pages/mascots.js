@@ -227,27 +227,26 @@ function options() {
   ];
 }
 
-async function load() {
-  part("enabled").replaceChildren(
-    toggle("Show on desktop", store.settings.mascot_enabled, (on) => save({ mascot_enabled: on })),
-  );
-  part("options").replaceChildren(...options());
+async function load({ fresh = false } = {}) {
   const [items, personalities, aiReady] = await Promise.all([
     call("list_mascots"),
     call("mascot_personalities"),
-    call("cutout_ready"),
+    fresh || !part("options").childElementCount ? call("cutout_ready") : null,
   ]);
-  part("grid").replaceChildren(...items.map((item) => card(item, personalities)));
-  if (aiReady) {
-    part("options").append(cutoutRow());
+  part("enabled").replaceChildren(
+    toggle("Show on desktop", store.settings.mascot_enabled, (on) => save({ mascot_enabled: on })),
+  );
+  if (aiReady !== null) {
+    part("options").replaceChildren(...options(), ...(aiReady ? [cutoutRow()] : []));
   }
+  part("grid").replaceChildren(...items.map((item) => card(item, personalities)));
 }
 
 function cutoutRow() {
   const remove = el("button", { class: "btn danger small" });
   confirmButton(remove, "Remove", async () => {
     await call("remove_cutout");
-    load();
+    load({ fresh: true });
   });
   return el("div", { class: "field" }, el("span", {}, "AI model for cutouts (185 MB)"), remove);
 }
@@ -1108,4 +1107,4 @@ async function addMascot() {
   }
 }
 
-register({ id: "mascots", build, show: load });
+register({ id: "mascots", build, show: () => load({ fresh: true }) });
