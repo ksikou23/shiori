@@ -23,6 +23,7 @@ const TEMPLATE = `
       <button data-tab="community">Community</button>
       <button data-tab="presence">Presence</button>
       <button data-tab="theme">Theme</button>
+      <button data-tab="data">Data</button>
       <button data-tab="blacklist">Never detect</button>
       <button data-tab="advanced">Advanced</button>
     </div>
@@ -115,6 +116,8 @@ function render() {
     body.replaceChildren(...communityTab());
   } else if (tab === "advanced") {
     body.replaceChildren(...advancedTab());
+  } else if (tab === "data") {
+    body.replaceChildren(...dataSection());
   } else if (tab === "blacklist") {
     body.replaceChildren(...blacklistTab());
   } else {
@@ -199,7 +202,6 @@ function generalTab() {
     ...walkthroughSection(),
     ...localeSection(),
     ...appSection(),
-    ...dataSection(),
   ];
 }
 
@@ -648,14 +650,14 @@ function dataSection() {
   const importButton = el("button", { class: "btn secondary", onclick: importData }, "Import…");
 
   return [
-    section("Your data"),
+    section("Cloud backup"),
+    cloudBox(),
+    section("Backup file"),
     hint(
       "Settings, the Library (time read, history, statuses) and custom covers in one file, to move to " +
         "another PC or keep a copy. It includes your VNDB token: don't share it.",
     ),
     el("div", { class: "row" }, exportButton, importButton),
-    el("div", { class: "field-label" }, "Cloud backup"),
-    cloudBox(),
   ];
 }
 
