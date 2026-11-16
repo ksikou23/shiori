@@ -244,40 +244,51 @@ function renderMenu(extra) {
   part("game").value = filterKey;
 }
 
+function addTiles(strip, from, upto) {
+  let n = 0;
+  for (const section of sections) {
+    if (n >= upto) {
+      break;
+    }
+    const first = n;
+    for (const { path } of section.items) {
+      if (n >= upto) {
+        break;
+      }
+      if (n >= from) {
+        if (n === first && section.title) {
+          strip.append(el("div", { class: "group" }, section.title));
+        }
+        strip.append(tile(path, n));
+      }
+      n += 1;
+    }
+  }
+  return n;
+}
+
+function addMoreButton(strip) {
+  if (shownCount >= shots.length) {
+    return;
+  }
+  const rest = Math.min(shots.length - shownCount, BATCH);
+  const more = el("button", { class: "btn secondary small" }, t("Show {count} more", { count: rest }));
+  more.onclick = () => {
+    more.remove();
+    shownCount = addTiles(strip, shownCount, shownCount + BATCH);
+    addMoreButton(strip);
+    highlight(false);
+  };
+  strip.append(more);
+}
+
 function fillStrip(upto) {
   const strip = part("strip");
   tileObserver.disconnect();
   waitingTiles = [];
   strip.replaceChildren();
-  shownCount = 0;
-  let n = 0;
-
-  for (const section of sections) {
-    if (n >= upto) {
-      break;
-    }
-    if (section.title) {
-      strip.append(el("div", { class: "group" }, section.title));
-    }
-    for (const { path } of section.items) {
-      if (n >= upto) {
-        break;
-      }
-      strip.append(tile(path, n));
-      n += 1;
-    }
-  }
-  shownCount = n;
-
-  if (n < shots.length) {
-    const rest = Math.min(shots.length - n, BATCH);
-    const more = el("button", { class: "btn secondary small" }, t("Show {count} more", { count: rest }));
-    more.onclick = () => {
-      fillStrip(shownCount + BATCH);
-      highlight();
-    };
-    strip.append(more);
-  }
+  shownCount = addTiles(strip, 0, upto);
+  addMoreButton(strip);
 }
 
 function queueTiles(entries) {
