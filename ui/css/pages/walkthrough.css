@@ -1,0 +1,145 @@
+.guide-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.guide-tabs button {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.guide-tabs button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.guide-tabs .spoiler {
+  filter: blur(4px);
+}
+
+#page-game .guide-steps {
+  max-height: 460px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guide-head .hint-text {
+  margin: 0;
+}
+
+.guide-sources {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.guide-sources .muted {
+  margin-right: 4px;
+}
+
+.guide-sources button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.guide-sources button:hover {
+  color: var(--text);
+}
+
+.guide-sources button.on {
+  background: var(--surface-alt);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.guide-empty + .guide-sources {
+  margin-top: 10px;
+}
+
+.guide-spoilers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.guide-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.guide-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guide-search input {
+  width: 100%;
+  margin: 8px 0;
+}
+
+.guide-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.guide-result {
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.guide-result {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guide-result-lang {
+  flex: none;
+  font-size: 12px;
+}
+
+.guide-result:hover {
+  background: var(--surface-hover);
+}

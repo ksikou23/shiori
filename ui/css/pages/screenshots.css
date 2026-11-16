@@ -1,0 +1,205 @@
+.gallery {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  min-height: 0;
+}
+
+.viewer-image {
+  flex: 1;
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-alt);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.viewer-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.viewer-empty {
+  text-align: center;
+}
+
+.viewer-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 4px 2px;
+}
+
+.side-strip {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+.side-strip .group {
+  color: var(--subtle);
+  font-weight: 700;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 8px 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-strip .tile {
+  flex: none;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 9px;
+  background: var(--surface-alt);
+  width: 210px;
+  height: 118px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.side-strip .tile.on {
+  border-color: var(--accent);
+}
+
+.side-strip .tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.side-strip .tile img:not([src]) {
+  content: linear-gradient(var(--surface-alt), var(--surface-alt));
+}
+
+.side-strip .tile-name {
+  display: none;
+}
+
+.gallery[data-view="folder"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.gallery[data-view="folder"] .viewer {
+  order: 1;
+  padding: 12px 16px;
+}
+
+.gallery[data-view="folder"] .viewer-info {
+  padding: 0;
+}
+
+.gallery[data-view="folder"] .viewer-image {
+  display: none;
+}
+
+.gallery[data-view="folder"] .side-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 14px 10px;
+  padding: 4px;
+}
+
+.gallery[data-view="folder"] .side-strip .group,
+.gallery[data-view="folder"] .side-strip > .btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.gallery[data-view="folder"] .side-strip .tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: auto;
+  padding: 6px;
+  border-radius: 8px;
+  background: none;
+}
+
+.gallery[data-view="folder"] .side-strip .tile:hover {
+  background: var(--surface-hover);
+}
+
+.gallery[data-view="folder"] .side-strip .tile.on {
+  border-color: transparent;
+  background: var(--accent-soft, var(--surface-hover));
+}
+
+.gallery[data-view="folder"] .side-strip .tile img {
+  flex: none;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.gallery[data-view="folder"] .side-strip .tile-name {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: center;
+  word-break: break-word;
+}
+
+.viewer-image video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 6px;
+  background: #000;
+}
+
+.side-strip .tile {
+  position: relative;
+}
+
+.side-strip .tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #000;
+  pointer-events: none;
+}
+
+.gallery[data-view="folder"] .side-strip .tile video {
+  flex: none;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.tile-clip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  padding-left: 2px;
+  pointer-events: none;
+}

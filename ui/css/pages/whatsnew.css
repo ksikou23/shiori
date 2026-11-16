@@ -1,0 +1,72 @@
+.community {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.btn.discord-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #5865f2;
+  color: #ffffff;
+}
+
+.btn.discord-btn:hover {
+  background: #4752c4;
+}
+
+.notes {
+  line-height: 1.6;
+  user-select: text;
+}
+
+.notes .version {
+  color: var(--accent);
+  font-size: 19px;
+  font-weight: 700;
+  margin-top: 12px;
+}
+
+.notes .date {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.notes h4 {
+  margin: 12px 0 4px;
+  font-size: 15px;
+}
+
+.notes ul {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+
+.notes hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 18px 0 6px;
+}
+
+@media (max-width: 1040px) {
+  .game-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .gallery {
+    grid-template-columns: 1fr;
+  }
+
+  .side-strip {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+}

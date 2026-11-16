@@ -1,0 +1,53 @@
+.vn-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vn-result {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 10px;
+}
+
+.vn-result .info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vn-result .title {
+  font-weight: 650;
+  font-size: 14.5px;
+}
+
+.preview-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+}
+
+.release-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.release-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  text-align: center;
+}
+
+.release-cell .cover {
+  width: 104px;
+  height: 146px;
+}

@@ -1,0 +1,265 @@
+.game-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 14px;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.game-grid > .col > .card {
+  flex: 1 0 auto;
+}
+
+.game-head {
+  display: flex;
+  gap: 18px;
+}
+
+.game-head .details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.path {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--subtle);
+  font-size: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.path:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.path:disabled {
+  cursor: default;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.stat {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.stat-edit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--subtle);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.stat-edit:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.stat span {
+  display: block;
+  color: var(--subtle);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shot-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.shot-strip button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: var(--surface-alt);
+  border-radius: 6px;
+  overflow: hidden;
+  width: 160px;
+  height: 90px;
+  cursor: pointer;
+  position: relative;
+}
+
+.shot-strip img,
+.shot-strip video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.game-footer {
+  display: flex;
+  gap: 8px;
+}
+
+.chart {
+  position: relative;
+}
+
+.chart svg {
+  width: 100%;
+  height: 190px;
+  display: block;
+  margin-top: 6px;
+  overflow: visible;
+}
+
+.chart rect.bar-column {
+  fill: var(--accent);
+  transition: fill 0.15s;
+}
+
+.chart rect.bar-column.hover {
+  fill: var(--accent-hover);
+}
+
+.chart text {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.chart text.peak {
+  fill: var(--text);
+  font-weight: 600;
+}
+
+.chart line {
+  stroke: var(--border);
+}
+
+.chart-tip {
+  position: absolute;
+  top: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  white-space: pre;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.heatmap {
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.heatmap svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.heatmap text {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.heatmap rect {
+  fill: var(--surface-alt);
+}
+
+.heatmap rect.level-1 {
+  fill: color-mix(in srgb, var(--accent) 30%, var(--surface-alt));
+}
+
+.heatmap rect.level-2 {
+  fill: color-mix(in srgb, var(--accent) 55%, var(--surface-alt));
+}
+
+.heatmap rect.level-3 {
+  fill: color-mix(in srgb, var(--accent) 80%, var(--surface-alt));
+}
+
+.heatmap rect.level-4 {
+  fill: var(--accent);
+}
+
+.heatmap .heatmap-start {
+  fill: var(--text);
+  pointer-events: none;
+}
+
+.heatmap .heatmap-flag {
+  fill: var(--text);
+  stroke: var(--text);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.heatmap.hide-starts .heatmap-start,
+.heatmap.hide-flags .heatmap-flag,
+.heatmap:not(.hide-flags) .heatmap-start.under-flag {
+  display: none;
+}
+
+.heatmap-legend label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.heatmap-legend input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.heatmap .heatmap-flag.many {
+  fill: #f5c542;
+  stroke: #f5c542;
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.heatmap rect:hover {
+  stroke: var(--text);
+  stroke-width: 1;
+}
+
+.stat:has(.stat-edit) > span {
+  padding-right: 22px;
+}
