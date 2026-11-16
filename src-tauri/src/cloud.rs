@@ -420,12 +420,15 @@ pub fn profile_payload(shared: &Shared, fetch: bool) -> Value {
             continue;
         }
         let mut card = vn_card(shared, key, entry, fetch);
-        let seconds = match status.as_str() {
-            "finished" if seconds < 60 => average_seconds(shared, entry).max(seconds),
-            _ => seconds,
+        let average = match status.as_str() {
+            "finished" if seconds < 60 => average_seconds(shared, entry),
+            _ => 0,
         };
         card.insert("s".into(), json!(status));
-        card.insert("p".into(), json!(seconds.max(0)));
+        card.insert("p".into(), json!(seconds.max(average).max(0)));
+        if average > seconds {
+            card.insert("e".into(), json!(1));
+        }
         for (field, short) in [("vndb_vote", "u"), ("last_played", "lp"), ("finished_at", "fa")] {
             if let Some(value) = entry.get(field).and_then(Value::as_i64).filter(|v| *v > 0) {
                 card.insert(short.into(), json!(value));
