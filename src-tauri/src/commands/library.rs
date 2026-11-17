@@ -54,6 +54,39 @@ fn cover_of(cfg: &Config, entry: &Entry) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+fn has_year(date: &str) -> bool {
+    date.as_bytes().get(..4).is_some_and(|year| year.iter().all(u8::is_ascii_digit))
+}
+
+fn release_date_pending(entry: &Entry) -> bool {
+    !text(entry, "vndb_release_id").is_empty()
+        && !entry.get("vndb_release_released").is_some_and(Value::is_string)
+}
+
+fn library_release_date(entry: &Entry, vn_id: &str) -> String {
+    let release_date = text(entry, "vndb_release_released");
+    if !text(entry, "vndb_release_id").is_empty() && has_year(&release_date) {
+        release_date
+    } else if !vn_id.is_empty() && text(entry, "released_vn") == vn_id {
+        text(entry, "released")
+    } else {
+        String::new()
+    }
+}
+
+fn vn_date_pending(entry: &Entry, vn_id: &str) -> bool {
+    !vn_id.is_empty()
+        && (release_date_pending(entry)
+            || text(entry, "vndb_release_id").is_empty()
+            || !has_year(&text(entry, "vndb_release_released")))
+        && text(entry, "released_vn") != vn_id
+}
+
+fn selected_release_date_update(entry: &Entry, release_id: &str, date: &str) -> Option<Entry> {
+    (text(entry, "vndb_release_id") == release_id && release_date_pending(entry))
+        .then(|| Map::from_iter([("vndb_release_released".into(), json!(date))]))
+}
+
 #[tauri::command(async)]
 pub fn get_library(shared: SharedState) -> Vec<Value> {
     let cfg = shared.config.lock().unwrap();
@@ -78,7 +111,8 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
                 "has_path": !launcher::launch_exe(&entry).is_empty(),
                 "from_vndb": entry.get("vndb_list_only").and_then(Value::as_bool).unwrap_or(false)
                     && launcher::launch_exe(&entry).is_empty(),
-                "released": if text(&entry, "released_vn") == vn_id { text(&entry, "released") } else { String::new() },
+                "released": library_release_date(&entry, &vn_id),
+                "release_date_pending": release_date_pending(&entry) || vn_date_pending(&entry, &vn_id),
                 "vndb_id": vn_id,
                 "cover": cover_of(&cfg, &entry),
             })
@@ -90,29 +124,48 @@ pub fn get_library(shared: SharedState) -> Vec<Value> {
 pub async fn fill_release_dates(shared: SharedState<'_>) -> Result<usize, String> {
     let shared = Arc::clone(&shared);
     blocking(move || {
-        let missing: Vec<(String, String)> = {
+        let (missing_vns, missing_releases): (Vec<_>, Vec<_>) = {
             let cfg = shared.config.lock().unwrap();
-            visible_games(&cfg)
-                .into_iter()
-                .filter_map(|(key, entry)| {
-                    let vn_id = [text(&entry, "vndb_id"), text(&entry, "matched_vndb_id")]
-                        .into_iter()
-                        .find(|id| !id.is_empty())?;
-                    (text(&entry, "released_vn") != vn_id).then_some((key, vn_id))
-                })
-                .collect()
+            let mut vns = Vec::new();
+            let mut releases = Vec::new();
+            for (key, entry) in visible_games(&cfg) {
+                let vn_id = [text(&entry, "vndb_id"), text(&entry, "matched_vndb_id")]
+                    .into_iter()
+                    .find(|id| !id.is_empty())
+                    .unwrap_or_default();
+                if vn_date_pending(&entry, &vn_id) {
+                    vns.push((key.clone(), vn_id));
+                }
+                if release_date_pending(&entry) {
+                    releases.push((key, text(&entry, "vndb_release_id")));
+                }
+            }
+            (vns, releases)
         };
-        if missing.is_empty() {
+        if missing_vns.is_empty() && missing_releases.is_empty() {
             return Ok(0);
         }
-        let mut ids: Vec<String> = missing.iter().map(|(_, id)| id.clone()).collect();
+        let mut ids: Vec<String> = missing_vns.iter().map(|(_, id)| id.clone()).collect();
         ids.sort();
         ids.dedup();
         let dates: std::collections::HashMap<String, String> =
             shared.vndb.release_dates(&ids)?.into_iter().collect();
+        let mut release_ids: Vec<String> = missing_releases.iter().map(|(_, id)| id.clone()).collect();
+        release_ids.sort();
+        release_ids.dedup();
+        let release_dates = shared.vndb.selected_release_dates(&release_ids)?;
+        let mut updated = 0;
         {
             let mut cfg = shared.config.lock().unwrap();
-            for (key, vn_id) in &missing {
+            for (key, vn_id) in &missing_vns {
+                let Some(entry) = cfg.all_games().get(key) else { continue };
+                let current_vn = [text(entry, "vndb_id"), text(entry, "matched_vndb_id")]
+                    .into_iter()
+                    .find(|id| !id.is_empty())
+                    .unwrap_or_default();
+                if current_vn != *vn_id || !vn_date_pending(entry, vn_id) {
+                    continue;
+                }
                 let date = dates.get(vn_id).cloned().unwrap_or_default();
                 cfg.set_game(
                     key,
@@ -121,11 +174,20 @@ pub async fn fill_release_dates(shared: SharedState<'_>) -> Result<usize, String
                         ("released_vn".into(), json!(vn_id)),
                     ]),
                 );
+                updated += 1;
+            }
+            for (key, release_id) in &missing_releases {
+                let Some(entry) = cfg.all_games().get(key) else { continue };
+                let Some(date) = release_dates.get(release_id) else { continue };
+                if let Some(fields) = selected_release_date_update(entry, release_id, date) {
+                    cfg.set_game(key, fields);
+                    updated += 1;
+                }
             }
         }
         shared.send(Cmd::Reload);
         shared.emit("library-changed", json!({}));
-        Ok(missing.len())
+        Ok(updated)
     })
     .await
 }
@@ -148,6 +210,8 @@ pub fn get_game(shared: SharedState, key: String) -> Value {
                 "key": other,
                 "name": screenshots::display_name(&other, &other_entry),
                 "playtime": other_entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0),
+                "vndb_id": text(&other_entry, "vndb_id"),
+                "vndb_release_id": text(&other_entry, "vndb_release_id"),
             })
         })
         .collect();
@@ -475,4 +539,40 @@ pub async fn get_wishlist(shared: SharedState<'_>) -> Result<Value, String> {
         Ok(json!({ "wishlist": wishlist, "in_library": in_library }))
     })
     .await
+}
+
+#[cfg(test)]
+mod release_date_tests {
+    use super::*;
+
+    #[test]
+    fn release_date_prefers_selected_release_and_falls_back_to_matching_vn() {
+        let mut entry = Map::from_iter([
+            ("vndb_release_id".into(), json!("r1")),
+            ("vndb_release_released".into(), json!("2022-10-28")),
+            ("released".into(), json!("2010-01-01")),
+            ("released_vn".into(), json!("v1")),
+        ]);
+        assert_eq!(library_release_date(&entry, "v1"), "2022-10-28");
+        assert!(!vn_date_pending(&entry, "v2"));
+        entry.insert("vndb_release_released".into(), json!("tba"));
+        assert_eq!(library_release_date(&entry, "v1"), "2010-01-01");
+        assert_eq!(library_release_date(&entry, "v2"), "");
+        assert!(vn_date_pending(&entry, "v2"));
+        entry.insert("vndb_release_id".into(), json!(""));
+        entry.insert("vndb_release_released".into(), json!("2022-10-28"));
+        assert_eq!(library_release_date(&entry, "v1"), "2010-01-01");
+    }
+
+    #[test]
+    fn old_selection_is_fetched_once_and_stale_results_are_rejected() {
+        let mut entry = Map::from_iter([("vndb_release_id".into(), json!("r1"))]);
+        assert!(release_date_pending(&entry));
+        assert!(selected_release_date_update(&entry, "r2", "2020-01-01").is_none());
+        entry.extend(selected_release_date_update(&entry, "r1", "tba").unwrap());
+        assert!(!release_date_pending(&entry));
+        assert!(selected_release_date_update(&entry, "r1", "2020-01-01").is_none());
+        entry.insert("vndb_release_id".into(), json!(""));
+        assert!(!release_date_pending(&entry));
+    }
 }

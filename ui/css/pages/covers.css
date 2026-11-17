@@ -11,6 +11,19 @@
   padding: 10px;
 }
 
+.vn-result.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.release-status {
+  align-self: center;
+}
+
+.release-count {
+  margin: 8px 0;
+}
+
 .vn-result .info {
   flex: 1;
   min-width: 0;

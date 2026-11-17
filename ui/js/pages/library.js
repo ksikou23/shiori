@@ -99,7 +99,8 @@ const VIEWS = {
 
 let root;
 let games = [];
-let datesAsked = false;
+let datesInFlight = false;
+let datesFailed = false;
 
 const part = (id) => $(`[data-id="${id}"]`, root);
 
@@ -147,6 +148,11 @@ async function load() {
   games = await call("get_library");
   render();
   renderActivity();
+}
+
+function showLibrary() {
+  datesFailed = false;
+  return load();
 }
 
 function readingDays() {
@@ -249,9 +255,15 @@ function render() {
 
   const reverse = !!store.settings.library_sort_reverse;
   part("reverse").textContent = reverse ? "↑" : "↓";
-  if (!datesAsked && (sort === "release" || view === "years") && games.some((game) => game.vndb_id && !game.released)) {
-    datesAsked = true;
-    call("fill_release_dates").catch(() => {});
+  if (!datesInFlight && !datesFailed && (sort === "release" || view === "years") && games.some((game) => game.release_date_pending)) {
+    datesInFlight = true;
+    call("fill_release_dates").then(() => {
+      datesInFlight = false;
+      load();
+    }, () => {
+      datesInFlight = false;
+      datesFailed = true;
+    });
   }
 
   const filter = part("filter").value.trim().toLowerCase();
@@ -438,6 +450,6 @@ function yearShelves(shown) {
 register({
   id: "library",
   build,
-  show: load,
+  show: showLibrary,
   onKey: (event) => event.key === "Escape" && (part("view-list").hidden = true),
 });

@@ -32,6 +32,21 @@ export function t(text, vars) {
   return out;
 }
 
+export function translateError(text) {
+  if (typeof text !== "string") return text;
+  const patterns = [
+    [/^couldn't read the VN's original language: ([\s\S]+)$/, "couldn't read the VN's original language: {error}", "error"],
+    [/^couldn't read VNDB releases: ([\s\S]+)$/, "couldn't read VNDB releases: {error}", "error"],
+    [/^VNDB returned an invalid release date for (.+)\.$/, "VNDB returned an invalid release date for {id}.", "id"],
+    [/^Couldn't find release (.+) on VNDB\.$/, "Couldn't find release {id} on VNDB.", "id"],
+  ];
+  for (const [pattern, key, variable] of patterns) {
+    const match = text.match(pattern);
+    if (match) return t(key, { [variable]: match[1] });
+  }
+  return t(text);
+}
+
 function translateText(value) {
   const key = squash(value);
   const hit = key && dictionary[key];

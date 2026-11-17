@@ -472,6 +472,7 @@ impl Engine {
 
         let vn = self.resolve_vn(&key, &cleaned, &entry, &steam_name);
         let game_name = [
+            crate::config::selected_release_title(&entry).unwrap_or("").to_string(),
             text(&entry, "title"),
             vn.as_ref().map(|v| v.title.clone()).unwrap_or_default(),
             steam_name.clone(),
@@ -525,6 +526,12 @@ impl Engine {
         }
 
         let mut other_names = vn.as_ref().map(|v| v.other_titles.clone()).unwrap_or_default();
+        if crate::config::selected_release_title(&entry).is_some() {
+            other_names.push(text(&entry, "vndb_release_alttitle"));
+            if let Some(vn) = &vn {
+                other_names.push(vn.title.clone());
+            }
+        }
         other_names.push(steam_name);
         let mut info = parse(&cleaned, &game_name, &other_names, &rules);
         let manual_section = text(&entry, "section");
@@ -659,6 +666,15 @@ impl Engine {
         let value = text(entry, "cover_value");
 
         match text(entry, "cover_source").as_str() {
+            "vndb_release" if !value.is_empty() => {
+                let nsfw = entry.get("cover_nsfw").and_then(Value::as_bool).unwrap_or(true);
+                return Cover {
+                    source: "vndb_release".into(),
+                    local_path: to_string(vndb.cover_path(&url_cache_key(&value), &value)),
+                    discord_image: release_cover_discord_image(&value, nsfw, nsfw_ok, asset),
+                    nsfw,
+                };
+            }
             "url" if !value.is_empty() => {
                 let discord_image = if value.starts_with("http") {
                     value.clone()
@@ -768,10 +784,8 @@ impl Engine {
             .find(|n| !n.is_empty())
             .cloned()
             .unwrap_or_else(|| "Visual Novel".into());
-        let original = snap
-            .vn
-            .as_ref()
-            .map(|vn| vn.alt_title.trim().to_string())
+        let entry = cfg.game(&snap.key);
+        let original = Some(presence::original_title(snap, &entry))
             .filter(|title| !title.is_empty() && cfg.str("title_language") == "original");
         // The other title shows when hovering the cover.
         let (name, hover) = match original {
@@ -798,7 +812,7 @@ impl Engine {
         if snap.privacy != "partial" && presence::enabled(custom) {
             let vars = presence::vars(
                 snap,
-                &cfg.game(&snap.key),
+                &entry,
                 cfg.str("title_language") == "original",
                 language,
             );
@@ -903,10 +917,19 @@ impl Engine {
     }
 }
 
+fn release_cover_discord_image(value: &str, nsfw: bool, nsfw_ok: bool, asset: &str) -> String {
+    if value.starts_with("https://") && (nsfw_ok || !nsfw) {
+        value.to_string()
+    } else {
+        asset.to_string()
+    }
+}
+
 fn reading_progress(playtime_seconds: i64, length_minutes: i64) -> Option<i64> {
     if length_minutes <= 0 {
         return None;
     }
+
     Some(playtime_seconds / 60 * 100 / length_minutes).filter(|percent| *percent < 100)
 }
 
@@ -939,4 +962,18 @@ fn learned_fields(
         learned.insert("cover_nsfw".into(), json!(cover.nsfw));
     }
     learned
+}
+
+#[cfg(test)]
+mod tests {
+    use super::release_cover_discord_image;
+
+    #[test]
+    fn release_cover_respects_nsfw_and_requires_https() {
+        let url = "https://t.vndb.org/cv/1/1.jpg";
+        assert_eq!(release_cover_discord_image(url, true, false, "default"), "default");
+        assert_eq!(release_cover_discord_image(url, true, true, "default"), url);
+        assert_eq!(release_cover_discord_image(url, false, false, "default"), url);
+        assert_eq!(release_cover_discord_image("http://example.test/a.jpg", false, true, "default"), "default");
+    }
 }
