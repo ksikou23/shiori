@@ -74,7 +74,7 @@ async function ask(snap) {
       !snap.emulator && { label: "Not a VN", kind: "danger", value: "not-vn" },
       { label: "Later", kind: "secondary", value: null },
       { label: snap.vn ? "Pick another VN…" : "Pick it on VNDB…", kind: snap.vn ? "secondary" : "", value: "pick" },
-      snap.vn && { label: "Yes, that's it — choose a release…", kind: "secondary", value: "yes-release" },
+      snap.vn && { label: "Yes, choose a release…", kind: "secondary", value: "yes-release" },
       snap.vn && { label: "Yes, that's it", value: "yes" },
     ].filter(Boolean),
   });

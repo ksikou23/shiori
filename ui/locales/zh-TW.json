@@ -528,7 +528,7 @@
     "Multiple VNs": "多個 VN",
     "Default release medium": "預設發行媒介",
     "The initial medium filter when choosing a VNDB release.": "選擇 VNDB 發行版本時的初始媒介篩選條件。",
-    "Yes, that's it — choose a release…": "是的，就是它 — 選擇發行版本…",
+    "Yes, choose a release…": "是，選擇發行版本…",
     "The selected VN could not be found on VNDB.": "在 VNDB 上找不到所選 VN。",
     "The selected release does not belong to this VN.": "所選發行版本不屬於此 VN。",
     "Couldn't download the selected release cover.": "無法下載所選發行版本的封面。",

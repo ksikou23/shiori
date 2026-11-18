@@ -528,7 +528,7 @@
     "Multiple VNs": "Varios VN",
     "Default release medium": "Formato de edición predeterminado",
     "The initial medium filter when choosing a VNDB release.": "Filtro de formato inicial al elegir una edición de VNDB.",
-    "Yes, that's it — choose a release…": "Sí, es esa — elegir edición…",
+    "Yes, choose a release…": "Sí, elegir edición…",
     "{day} {month}": "{day} {month}",
     "The selected VN could not be found on VNDB.": "No se encontró el VN seleccionado en VNDB.",
     "The selected release does not belong to this VN.": "La edición seleccionada no pertenece a este VN.",

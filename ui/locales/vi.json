@@ -528,7 +528,7 @@
     "Multiple VNs": "Nhiều VN",
     "Default release medium": "Phương tiện phát hành mặc định",
     "The initial medium filter when choosing a VNDB release.": "Bộ lọc phương tiện ban đầu khi chọn bản phát hành VNDB.",
-    "Yes, that's it — choose a release…": "Đúng rồi — chọn bản phát hành…",
+    "Yes, choose a release…": "Có, chọn bản phát hành…",
     "{day} {month}": "Ngày {day} {month}",
     "The selected VN could not be found on VNDB.": "Không tìm thấy VN đã chọn trên VNDB.",
     "The selected release does not belong to this VN.": "Bản phát hành đã chọn không thuộc VN này.",

@@ -528,7 +528,7 @@
     "Multiple VNs": "Несколько новелл",
     "Default release medium": "Носитель издания по умолчанию",
     "The initial medium filter when choosing a VNDB release.": "Начальный фильтр носителя при выборе издания VNDB.",
-    "Yes, that's it — choose a release…": "Да, это она — выбрать издание…",
+    "Yes, choose a release…": "Да, выбрать издание…",
     "{day} {month}": "{day} {month}",
     "The selected VN could not be found on VNDB.": "Выбранная новелла не найдена в VNDB.",
     "The selected release does not belong to this VN.": "Выбранное издание не относится к этой новелле.",
