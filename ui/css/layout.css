@@ -614,3 +614,215 @@ html.has-bg .now-chip {
     opacity: 0.25;
   }
 }
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.settings-nav {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-search {
+  width: 100%;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-tabs button {
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.settings-tabs button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.settings-tabs button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.card.settings-body {
+  min-width: 0;
+  overflow: visible;
+}
+
+.settings-group + .settings-group {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-group-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 760px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav {
+    position: static;
+  }
+
+  .settings-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .settings-tabs button {
+    white-space: nowrap;
+  }
+}
+
+.cloud-account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+}
+
+.cloud-account > * {
+  align-self: center;
+}
+
+.cloud-account .cloud-who {
+  justify-content: center;
+}
+
+.cloud-account .cloud-who {
+  flex: 1;
+  min-width: 0;
+}
+
+.backup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.backup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+}
+
+.backup-card-title {
+  font-size: 15px;
+}
+
+.backup-card-text {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.backup-card-actions {
+  margin-top: auto;
+}
+
+.backup-card-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.cloud-danger {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .backup-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.shots-card + .shots-card {
+  margin-top: 12px;
+}
+
+.shots-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+
+.shots-item .hint-text {
+  margin-top: 0;
+}
+
+.shots-folder {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.shots-folder .field-label {
+  margin-top: 0;
+}
+
+.shots-card .clip-groups {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: stretch;
+  margin-top: 2px;
+}
+
+.shots-card .clip-group .field {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+
+.shots-card .clip-group .field > :last-child {
+  width: 100%;
+  min-width: 0;
+}
+
+.shots-card .clip-group .field > span:first-child {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.shots-card .clip-group {
+  background: var(--surface);
+}
+
+@media (max-width: 900px) {
+  .shots-grid {
+    grid-template-columns: 1fr;
+  }
+}

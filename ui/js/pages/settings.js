@@ -10,7 +10,7 @@ import { discordButton, discordLogo } from "../components/discord-button.js";
 import { languagePicker } from "../components/language-picker.js";
 import { plural, t } from "../i18n.js";
 import { presenceBuilder } from "./presence.js";
-import { communityTab } from "../components/community-tab.js";
+import { communityTab, warmCommunity } from "../components/community-tab.js";
 import { defaultReleaseMedium } from "../release-filters.js";
 
 const TEMPLATE = `
@@ -18,17 +18,22 @@ const TEMPLATE = `
     <h2>Settings</h2>
   </div>
 
-  <div class="card">
-    <div class="tabs" data-id="tabs">
-      <button data-tab="general">General</button>
-      <button data-tab="community">Community</button>
-      <button data-tab="presence">Presence</button>
-      <button data-tab="theme">Theme</button>
-      <button data-tab="data">Data</button>
-      <button data-tab="blacklist">Never detect</button>
-      <button data-tab="advanced">Advanced</button>
-    </div>
-    <div class="settings-body" data-id="body" style="padding-top: 16px"></div>
+  <div class="settings-layout">
+    <nav class="settings-nav">
+      <input class="settings-search" data-id="search" type="search" placeholder="Search settings…" />
+      <div class="settings-tabs" data-id="tabs">
+        <button data-tab="general">General</button>
+        <button data-tab="library">Library</button>
+        <button data-tab="presence">Presence</button>
+        <button data-tab="screenshots">Screenshots</button>
+        <button data-tab="profile">Profile & backup</button>
+        <button data-tab="community">Community</button>
+        <button data-tab="theme">Theme</button>
+        <button data-tab="detection">Detection</button>
+        <button data-tab="advanced">Advanced</button>
+      </div>
+    </nav>
+    <div class="card settings-body" data-id="body"></div>
   </div>
 
   <div class="settings-footer">
@@ -42,6 +47,9 @@ const TEMPLATE = `
 
 let root;
 let tab = "general";
+let query = "";
+
+const OLD_TABS = { data: "profile", blacklist: "detection" };
 
 const part = (id) => $(`[data-id="${id}"]`, root);
 
@@ -52,11 +60,24 @@ function build(container) {
   for (const button of part("tabs").querySelectorAll("button")) {
     button.onclick = () => {
       tab = button.dataset.tab;
+      query = "";
+      part("search").value = "";
       render();
+      part("body").scrollTop = 0;
     };
   }
 
+  let typing = null;
+  part("search").addEventListener("input", (event) => {
+    clearTimeout(typing);
+    typing = setTimeout(() => {
+      query = event.target.value.trim().toLowerCase();
+      render();
+    }, 200);
+  });
+
   buildFooter();
+  setTimeout(warmCommunity, 4000);
 
   subscribe("settings", () => {
     const typing =
@@ -69,7 +90,9 @@ function build(container) {
 
 function showPage(params = {}) {
   if (params.tab) {
-    tab = params.tab;
+    tab = OLD_TABS[params.tab] || params.tab;
+    query = "";
+    part("search").value = "";
   }
   render();
   if (params.focus) {
@@ -103,27 +126,83 @@ async function quietSave(changes) {
   await call("update_settings", { changes });
 }
 
-function render() {
-  for (const button of part("tabs").querySelectorAll("button")) {
-    button.classList.toggle("on", button.dataset.tab === tab);
-  }
+const TABS = {
+  general: () => generalTab(),
+  library: () => libraryTab(),
+  presence: () => presenceTab(),
+  screenshots: () => screenshotsSection(),
+  profile: () => dataSection(),
+  community: () => communityTab(),
+  theme: () => {
+    const box = el("div");
+    renderThemeTab(box, save);
+    return [box];
+  },
+  detection: () => [section("Never detect"), ...blacklistTab(), section("Title rules"), ...rulesTab()],
+  advanced: () => advancedTab(),
+};
 
+function render() {
   const body = part("body");
-  if (tab === "theme") {
-    renderThemeTab(body, save);
-  } else if (tab === "presence") {
-    body.replaceChildren(...presenceTab());
-  } else if (tab === "community") {
-    body.replaceChildren(...communityTab());
-  } else if (tab === "advanced") {
-    body.replaceChildren(...advancedTab());
-  } else if (tab === "data") {
-    body.replaceChildren(...dataSection());
-  } else if (tab === "blacklist") {
-    body.replaceChildren(...blacklistTab());
-  } else {
-    body.replaceChildren(...generalTab());
+  for (const button of part("tabs").querySelectorAll("button")) {
+    button.classList.toggle("on", !query && button.dataset.tab === tab);
   }
+  if (!query) {
+    body.replaceChildren(...(TABS[tab] || TABS.general)());
+    return;
+  }
+  const groups = [];
+  for (const button of part("tabs").querySelectorAll("button")) {
+    const group = el(
+      "div",
+      { class: "settings-group" },
+      el("div", { class: "settings-group-title" }, button.textContent),
+      ...TABS[button.dataset.tab](),
+    );
+    if (filterGroup(group)) {
+      groups.push(group);
+    }
+  }
+  body.replaceChildren(...(groups.length ? groups : [el("div", { class: "muted" }, "No setting matches.")]));
+}
+
+function matches(node) {
+  const words = [node.textContent];
+  for (const field of node.querySelectorAll?.("[placeholder], [title]") || []) {
+    words.push(field.getAttribute("placeholder") || "", field.getAttribute("title") || "");
+  }
+  return words.join(" ").toLowerCase().includes(query);
+}
+
+function filterGroup(group) {
+  const [title, ...items] = group.children;
+  if (matches(title)) {
+    return true;
+  }
+  const blocks = [];
+  for (const item of items) {
+    if (item.classList.contains("section-title") || !blocks.length) {
+      blocks.push({ title: item.classList.contains("section-title") ? item : null, items: [] });
+    }
+    if (!item.classList.contains("section-title")) {
+      blocks.at(-1).items.push(item);
+    }
+  }
+  let any = false;
+  for (const block of blocks) {
+    const all = block.title && matches(block.title);
+    let shown = false;
+    for (const item of block.items) {
+      const keep = all || matches(item);
+      item.hidden = !keep;
+      shown ||= keep;
+    }
+    if (block.title) {
+      block.title.hidden = !shown;
+    }
+    any ||= shown;
+  }
+  return any;
 }
 
 const section = (title, id = "") => el("div", { class: "section-title", "data-section": id }, title);
@@ -195,15 +274,11 @@ function languageSection() {
 }
 
 function generalTab() {
-  return [
-    ...languageSection(),
-    ...coversSection(),
-    ...vndbSection(),
-    ...screenshotsSection(),
-    ...walkthroughSection(),
-    ...localeSection(),
-    ...appSection(),
-  ];
+  return [...languageSection(), ...appSection()];
+}
+
+function libraryTab() {
+  return [...coversSection(), ...vndbSection(), ...walkthroughSection(), ...localeSection()];
 }
 
 function advancedTab() {
@@ -221,8 +296,6 @@ function advancedTab() {
     hint(
       "The image Discord shows when the cover can't be: a local file, an NSFW cover, or no cover.",
     ),
-    section("Title rules"),
-    ...rulesTab(),
   ];
 }
 
@@ -430,25 +503,45 @@ function screenshotsSection() {
   listen.onclick = () => invoke("play_shutter", { volume: Number(volume.value) });
 
   return [
-    section("Screenshots"),
-    el("div", { class: "field" }, el("span", {}, "Capture key"), key),
-    hint(
-      "Click, then press the key or combination (Esc cancels, Backspace turns it off). It only works " +
-        "while the game's window is in front, so other programs keep the key.",
-    ),
     el(
       "div",
-      { class: "field" },
-      el("span", {}, "Capture sound"),
-      el("div", { class: "row" }, volume, volumeLabel, listen),
+      { class: "backup-card shots-card" },
+      el("b", { class: "backup-card-title" }, "Screenshots"),
+      el(
+        "div",
+        { class: "shots-grid" },
+        el(
+          "div",
+          { class: "shots-item" },
+          el("div", { class: "field" }, el("span", {}, "Capture key"), key),
+          hint(
+            "Click, then press the key or combination (Esc cancels, Backspace turns it off). It only works " +
+              "while the game's window is in front, so other programs keep the key.",
+          ),
+        ),
+        el(
+          "div",
+          { class: "shots-item" },
+          el(
+            "div",
+            { class: "field" },
+            el("span", {}, "Capture sound"),
+            el("div", { class: "row" }, volume, volumeLabel, listen),
+          ),
+        ),
+      ),
+      el(
+        "div",
+        { class: "shots-folder" },
+        el("div", { class: "field-label" }, "Folder"),
+        pathRow("screenshot_dir", {
+          title: "Screenshot folder",
+          folder: true,
+          placeholder: store.defaultScreenshotRoot,
+        }),
+        hint("Each VN gets its own folder in there. Screenshots already taken aren't moved."),
+      ),
     ),
-    el("div", { class: "field-label" }, "Folder"),
-    pathRow("screenshot_dir", {
-      title: "Screenshot folder",
-      folder: true,
-      placeholder: store.defaultScreenshotRoot,
-    }),
-    hint("Each VN gets its own folder in there. Screenshots already taken aren't moved."),
     ...clips,
   ];
 }
@@ -562,18 +655,22 @@ function clipsSection() {
   options.hidden = store.settings.clip_enabled === false;
 
   return [
-    section("Clips"),
-    toggle(
-      "Turn on clips",
-      store.settings.clip_enabled !== false,
-      (on) => {
-        options.hidden = !on;
-        save({ clip_enabled: on });
-      },
-      "Off: the clip keys stay free for other apps and nothing is recorded. Clips are saved as MP4 next " +
-        "to your screenshots.",
+    el(
+      "div",
+      { class: "backup-card shots-card" },
+      el("b", { class: "backup-card-title" }, "Clips"),
+      toggle(
+        "Turn on clips",
+        store.settings.clip_enabled !== false,
+        (on) => {
+          options.hidden = !on;
+          save({ clip_enabled: on });
+        },
+        "Off: the clip keys stay free for other apps and nothing is recorded. Clips are saved as MP4 next " +
+          "to your screenshots.",
+      ),
+      options,
     ),
-    options,
   ];
 }
 
@@ -641,7 +738,7 @@ function appSection() {
   return [
     section("App"),
     toggle(
-      el("span", {}, "Top bar", " ", el("span", { class: "labs-tag" }, "beta")),
+      "Top bar",
       store.settings.labs_topbar !== false,
       (on) => save({ labs_topbar: on }),
       "Shows the VN you're reading, the search, the status and Pause at the top.",
@@ -662,16 +759,20 @@ function dataSection() {
   const exportButton = el("button", { class: "btn secondary", onclick: exportData }, "Export…");
   const importButton = el("button", { class: "btn secondary", onclick: importData }, "Import…");
 
-  return [
-    section("Cloud backup"),
-    cloudBox(),
-    section("Backup file"),
-    hint(
+  const file = el(
+    "div",
+    { class: "backup-card" },
+    el("b", { class: "backup-card-title" }, "Backup file"),
+    el(
+      "span",
+      { class: "muted backup-card-text" },
       "Settings, the Library (time read, history, statuses) and custom covers in one file, to move to " +
         "another PC or keep a copy. It includes your VNDB token: don't share it.",
     ),
-    el("div", { class: "row" }, exportButton, importButton),
-  ];
+    el("div", { class: "row backup-card-actions" }, exportButton, importButton),
+  );
+
+  return [cloudBox(file)];
 }
 
 const PRIVACY_URL = "https://shiori.maia.moe/privacy";
@@ -690,7 +791,7 @@ function cloudSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function cloudBox() {
+function cloudBox(file) {
   const box = el("div", { class: "cloud-box" });
   const privacy = () =>
     el("button", { class: "link", onclick: () => call("open_url", { url: PRIVACY_URL }) }, "What's stored");
@@ -720,12 +821,14 @@ function cloudBox() {
           privacy(),
         ),
       ),
+      file,
     );
 
   const failed = () =>
     show(
       el("div", { class: "hint-text" }, "Couldn't reach the cloud. Check your connection."),
       el("button", { class: "btn secondary small", onclick: () => refresh({ loud: true }) }, "Try again"),
+      file,
     );
 
   const signedIn = (status) => {
@@ -739,7 +842,7 @@ function cloudBox() {
           backup.size ? el("span", { class: "muted" }, ` · ${cloudSize(backup.size)}`) : null,
         )
       : el("span", { class: "cloud-saved" }, el("span", { class: "cloud-dot" }), t("Nothing saved in the cloud yet."));
-    const saveButton = el("button", { class: "btn small" }, "Save to cloud");
+    const saveButton = el("button", { class: "btn" }, "Save to cloud");
     saveButton.onclick = async () => {
       saveButton.disabled = true;
       const result = await call("cloud_save");
@@ -749,7 +852,7 @@ function cloudBox() {
         refresh();
       }
     };
-    const loadButton = el("button", { class: "btn secondary small", disabled: !backup }, "Load from cloud");
+    const loadButton = el("button", { class: "btn secondary", disabled: !backup }, "Load from cloud");
     loadButton.onclick = () => loadCloud(status);
     const avatar = status.avatar_url
       ? el("img", { class: "cloud-avatar", src: status.avatar_url, alt: "" })
@@ -757,47 +860,49 @@ function cloudBox() {
     show(
       el(
         "div",
-        { class: "cloud-card" },
+        { class: "cloud-account" },
+        avatar,
         el(
           "div",
-          { class: "cloud-head" },
-          avatar,
+          { class: "cloud-who" },
+          el("b", {}, status.name || "Discord"),
+          el("span", { class: "muted cloud-via" }, discordLogo(), "Discord"),
+        ),
+        privacy(),
+        el("button", { class: "btn secondary small", onclick: signOut }, "Sign out"),
+      ),
+      el(
+        "div",
+        { class: "backup-grid" },
+        el(
+          "div",
+          { class: "backup-card" },
+          el("b", { class: "backup-card-title" }, "Cloud backup"),
+          saved,
+          el("div", { class: "row backup-card-actions" }, saveButton, loadButton),
           el(
             "div",
-            { class: "cloud-who" },
-            el("b", {}, status.name || "Discord"),
-            el("span", { class: "muted cloud-via" }, discordLogo(), "Discord"),
-          ),
-          el("button", { class: "btn secondary small", onclick: signOut }, "Sign out"),
-        ),
-        el(
-          "div",
-          { class: "cloud-part" },
-          el(
-            "div",
-            { class: "cloud-part-head" },
-            el("div", { class: "cloud-part-title" }, el("b", {}, "Backup"), saved),
-            el("div", { class: "row cloud-actions" }, saveButton, loadButton),
-          ),
-          toggle(
-            "Save to the cloud when Shiori closes",
-            !!store.settings.sync_auto_save,
-            (on) => quietSave({ sync_auto_save: on }),
-            "Only when you quit Shiori RPC, not when you close its window.",
-          ),
-          toggle(
-            "Include my VNDB token",
-            !!store.settings.sync_vndb_token,
-            (on) => quietSave({ sync_vndb_token: on }),
-            "So you don't have to paste it again on another PC. Off: it stays on this PC only.",
+            { class: "backup-card-toggles" },
+            toggle(
+              "Save to the cloud when Shiori closes",
+              !!store.settings.sync_auto_save,
+              (on) => quietSave({ sync_auto_save: on }),
+              "Only when you quit Shiori RPC, not when you close its window.",
+            ),
+            toggle(
+              "Include my VNDB token",
+              !!store.settings.sync_vndb_token,
+              (on) => quietSave({ sync_vndb_token: on }),
+              "So you don't have to paste it again on another PC. Off: it stays on this PC only.",
+            ),
           ),
         ),
-        el(
-          "div",
-          { class: "row cloud-links" },
-          privacy(),
-          el("button", { class: "link danger-text", onclick: deleteCloud }, "Delete my cloud data"),
-        ),
+        file,
+      ),
+      el(
+        "div",
+        { class: "cloud-danger" },
+        el("button", { class: "link danger-text", onclick: deleteCloud }, "Delete my cloud data"),
       ),
     );
   };
@@ -806,7 +911,7 @@ function cloudBox() {
 
   async function refresh({ loud = false } = {}) {
     if (loud || !cloudStatus) {
-      show(el("div", { class: "hint-text" }, "Checking your cloud backup…"));
+      show(el("div", { class: "hint-text" }, "Checking your cloud backup…"), file);
     }
     try {
       const status = await invoke("cloud_status");
@@ -831,9 +936,7 @@ function cloudBox() {
   }
 
   async function signIn() {
-    show(
-      el("div", { class: "hint-text" }, "Finish signing in in your browser, then come back here."),
-    );
+    show(el("div", { class: "hint-text" }, "Finish signing in in your browser, then come back here."), file);
     try {
       const status = await invoke("cloud_login");
       cloudStatus = status;

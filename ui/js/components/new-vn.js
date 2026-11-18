@@ -115,7 +115,7 @@ async function offerVndbList() {
     ],
   });
   if (answer) {
-    show("settings", { tab: "general", focus: "vndb" });
+    show("settings", { tab: "library", focus: "vndb" });
   }
 }
 
