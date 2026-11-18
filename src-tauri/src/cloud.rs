@@ -314,7 +314,10 @@ pub fn logout(shared: &Shared) {
 
 const PROFILE: &str = "profile_public";
 const PROFILE_EVERY: Duration = Duration::from_secs(180);
-const PROFILE_CHECK: Duration = Duration::from_secs(60);
+const PROFILE_TICK: Duration = Duration::from_secs(10);
+const PROFILE_GAP: Duration = Duration::from_secs(20);
+const PROFILE_HEARTBEAT: Duration = Duration::from_secs(300);
+const PROFILE_RETRY_MAX: Duration = Duration::from_secs(300);
 const HIDDEN_PRIVACY: [&str; 2] = ["off", "private"];
 const PUBLIC_SEXUAL: f64 = 0.5;
 
@@ -402,13 +405,13 @@ fn average_seconds(shared: &Shared, entry: &Map<String, Value>) -> i64 {
         .map_or(0, |minutes| minutes * 60)
 }
 
-fn vn_card(shared: &Shared, key: &str, entry: &Map<String, Value>, fetch: bool) -> Map<String, Value> {
+fn vn_card(shared: &Shared, key: &str, entry: &Map<String, Value>, fetch: Option<bool>) -> Map<String, Value> {
     let title: String = crate::screenshots::display_name(key, entry).chars().take(80).collect();
     let mut card = Map::from_iter([("k".to_string(), json!(short_key(key))), ("t".to_string(), json!(title))]);
     if let Some(id) = vndb_id(entry) {
         card.insert("id".into(), json!(id));
     }
-    if let Some((path, nsfw)) = cover_path(shared, entry, fetch) {
+    if let Some((path, nsfw)) = fetch.and_then(|fetch| cover_path(shared, entry, fetch)) {
         card.insert("cv".into(), json!(path));
         if nsfw {
             card.insert("x".into(), json!(1));
@@ -418,6 +421,10 @@ fn vn_card(shared: &Shared, key: &str, entry: &Map<String, Value>, fetch: bool) 
 }
 
 pub fn profile_payload(shared: &Shared, fetch: bool) -> Value {
+    payload(shared, Some(fetch))
+}
+
+fn payload(shared: &Shared, fetch: Option<bool>) -> Value {
     let cfg = shared.config.lock().unwrap();
     let games = crate::commands::library::visible_games(&cfg);
     drop(cfg);
@@ -431,7 +438,7 @@ pub fn profile_payload(shared: &Shared, fetch: bool) -> Value {
         }
         let seconds = entry.get("playtime_seconds").and_then(Value::as_i64).unwrap_or(0);
         let status = entry_text(entry, "status");
-        if seconds < 60 && status.is_empty() {
+        if (seconds < 60 && status.is_empty()) || vndb_id(entry).is_none() {
             continue;
         }
         let mut card = vn_card(shared, key, entry, fetch);
@@ -456,14 +463,18 @@ pub fn profile_payload(shared: &Shared, fetch: bool) -> Value {
     let now = keys
         .get(&snap.key)
         .filter(|_| snap.detected && !snap.paused)
-        .map(|entry| Value::Object(vn_card(shared, &snap.key, entry, false)))
+        .map(|entry| Value::Object(vn_card(shared, &snap.key, entry, fetch.map(|_| false))))
         .unwrap_or(Value::Null);
     json!({ "public": true, "now": now, "vns": vns, "hidden": hidden_keys })
 }
 
 fn put_profile(shared: &Shared, body: &Value) -> Result<Value, String> {
+    put_profile_within(shared, body, 20)
+}
+
+fn put_profile_within(shared: &Shared, body: &Value, timeout: u64) -> Result<Value, String> {
     let token = token(shared).ok_or("Sign in with Discord first.")?;
-    let reply = client(20)?
+    let reply = client(timeout)?
         .put(format!("{}/profile", api()))
         .bearer_auth(&token)
         .json(body)
@@ -483,38 +494,85 @@ pub fn set_public(shared: &Shared, public: bool) -> Result<Value, String> {
     Ok(answer)
 }
 
+fn library_shape(body: &Value) -> String {
+    let mut vns = body["vns"].clone();
+    for card in vns.as_array_mut().into_iter().flatten() {
+        if let Some(card) = card.as_object_mut() {
+            for field in ["p", "lp", "e"] {
+                card.remove(field);
+            }
+        }
+    }
+    vns.to_string()
+}
+
+fn retry_wait(failures: u32) -> Duration {
+    (PROFILE_GAP * 2u32.saturating_pow(failures.min(5))).min(PROFILE_RETRY_MAX)
+}
+
 pub fn start_profile_sync(shared: std::sync::Arc<Shared>) {
     std::thread::spawn(move || {
         let mut last_body = String::new();
+        let mut last_shape = String::new();
         let mut last_now = Value::Null;
         let mut last_push: Option<Instant> = None;
+        let mut failures = 0u32;
         loop {
-            std::thread::sleep(PROFILE_CHECK);
+            std::thread::sleep(PROFILE_TICK);
             let wanted = shared.config.lock().unwrap().bool(PROFILE);
             if !wanted || token(&shared).is_none() {
                 last_body.clear();
+                last_shape.clear();
+                last_now = Value::Null;
+                last_push = None;
+                failures = 0;
                 continue;
             }
-            let body = profile_payload(&shared, true);
-            let text = body.to_string();
-            let now_changed = body["now"]["k"] != last_now["k"];
-            let due = last_push.is_none_or(|at| at.elapsed() >= PROFILE_EVERY);
-            if text == last_body || !(now_changed || due) {
+            let probe = payload(&shared, None);
+            let text = probe.to_string();
+            let shape = library_shape(&probe);
+            let since = last_push.map_or(Duration::MAX, |at| at.elapsed());
+            let wait = if failures > 0 { retry_wait(failures) } else { PROFILE_GAP };
+            if since < wait {
+                continue;
+            }
+            let urgent = probe["now"]["k"] != last_now["k"] || shape != last_shape;
+            let due = text != last_body && since >= PROFILE_EVERY;
+            let heartbeat = !probe["now"].is_null() && since >= PROFILE_HEARTBEAT;
+            if !(urgent || due || heartbeat) {
                 continue;
             }
             last_push = Some(Instant::now());
+            let body = profile_payload(&shared, true);
             match put_profile(&shared, &body) {
                 Ok(_) => {
                     last_body = text;
-                    last_now = body["now"].clone();
+                    last_shape = shape;
+                    last_now = probe["now"].clone();
+                    failures = 0;
                 }
-                Err(error) => crate::crash::note(format!("public profile: {error}")),
+                Err(error) => {
+                    failures += 1;
+                    crate::crash::note(format!("public profile: {error}"));
+                }
             }
         }
     });
 }
 
+fn stop_reading_on_site(shared: &Shared) {
+    if !shared.config.lock().unwrap().bool(PROFILE) || token(shared).is_none() {
+        return;
+    }
+    let mut body = profile_payload(shared, false);
+    body["now"] = Value::Null;
+    if let Err(error) = put_profile_within(shared, &body, 4) {
+        crate::crash::note(format!("public profile on exit: {error}"));
+    }
+}
+
 pub fn save_on_exit(shared: &Shared) {
+    stop_reading_on_site(shared);
     let wanted = shared.config.lock().unwrap().bool(AUTO_SAVE);
     if wanted && token(shared).is_some() {
         if let Err(error) = upload(shared, 10) {
@@ -526,6 +584,22 @@ pub fn save_on_exit(shared: &Shared) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reading_time_alone_does_not_change_the_library_shape() {
+        let a = json!({"vns": [{"k": "a", "s": "playing", "p": 60, "lp": 1}]});
+        let b = json!({"vns": [{"k": "a", "s": "playing", "p": 120, "lp": 2}]});
+        let c = json!({"vns": [{"k": "a", "s": "finished", "p": 120, "lp": 2}]});
+        assert_eq!(library_shape(&a), library_shape(&b));
+        assert_ne!(library_shape(&b), library_shape(&c));
+    }
+
+    #[test]
+    fn retries_slow_down_but_stay_bounded() {
+        assert_eq!(retry_wait(1), Duration::from_secs(40));
+        assert!(retry_wait(2) > retry_wait(1));
+        assert_eq!(retry_wait(30), PROFILE_RETRY_MAX);
+    }
 
     #[test]
     fn only_vndb_covers_and_shared_games_go_public() {
