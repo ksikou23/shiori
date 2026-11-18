@@ -312,7 +312,7 @@ pub fn place_balloon(app: &AppHandle, width: u32, height: u32, anchor: Option<(f
         let _ = balloon.set_ignore_cursor_events(true);
         let _ = balloon.show();
     }
-    raise(&balloon);
+    raise(&balloon, &mascot);
     *BUBBLE.lock().unwrap() = Some((x, y, bw, bh));
     watch_bubble(app);
     if before {
@@ -322,9 +322,9 @@ pub fn place_balloon(app: &AppHandle, width: u32, height: u32, anchor: Option<(f
     }
 }
 
-fn raise(window: &WebviewWindow) {
-    if let Ok(hwnd) = window.hwnd() {
-        winapi::raise_topmost(hwnd.0 as isize);
+fn raise(window: &WebviewWindow, mascot: &WebviewWindow) {
+    if let (Ok(hwnd), Ok(under)) = (window.hwnd(), mascot.hwnd()) {
+        winapi::stack_above(hwnd.0 as isize, under.0 as isize);
     }
 }
 
@@ -340,7 +340,9 @@ fn watch_bubble(app: &AppHandle) {
             std::thread::sleep(Duration::from_millis(60));
             ticks = ticks.wrapping_add(1);
             if ticks % 8 == 0 && window.is_visible().unwrap_or(false) {
-                raise(&window);
+                if let Some(mascot) = crate::mascot::speaker().and_then(|label| app.get_webview_window(&label)) {
+                    raise(&window, &mascot);
+                }
             }
             let over = match (*BUBBLE.lock().unwrap(), winapi::cursor_pos()) {
                 (Some((x, y, w, h)), Some((cx, cy))) => cx >= x && cx < x + w && cy >= y && cy < y + h,

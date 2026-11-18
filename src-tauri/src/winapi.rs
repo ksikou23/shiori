@@ -18,7 +18,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SetWindowPos, GW_HWNDPREV, HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOOWNERZORDER, SWP_NOSIZE, WS_EX_TOPMOST,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -232,17 +233,30 @@ pub fn make_no_activate(h: isize) {
     change_ex_style(h, WS_EX_NOACTIVATE.0);
 }
 
-pub fn raise_topmost(h: isize) {
+fn is_topmost(h: HWND) -> bool {
+    unsafe { GetWindowLongW(h, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 != 0 }
+}
+
+fn put_after(h: HWND, after: HWND) {
     unsafe {
-        let _ = SetWindowPos(
-            HWND(h as *mut c_void),
-            Some(HWND_TOPMOST),
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
-        );
+        let _ = SetWindowPos(h, Some(after), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    }
+}
+
+pub fn stack_above(h: isize, under: isize) {
+    let (window, under) = (HWND(h as *mut c_void), HWND(under as *mut c_void));
+    if is_topmost(under) {
+        put_after(window, HWND_TOPMOST);
+        return;
+    }
+    if is_topmost(window) {
+        put_after(window, HWND_NOTOPMOST);
+    }
+    let above = unsafe { GetWindow(under, GW_HWNDPREV) };
+    match above {
+        Ok(above) if above == window => {}
+        Ok(above) if !above.0.is_null() && !is_topmost(above) => put_after(window, above),
+        _ => put_after(window, HWND_TOP),
     }
 }
 
