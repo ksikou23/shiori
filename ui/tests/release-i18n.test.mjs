@@ -46,6 +46,9 @@ test("release errors are translated in every language without losing details", a
   const { box, loadLanguage, call } = await setup();
   const cases = [
     ["The selected release does not belong to this VN.", "The selected release does not belong to this VN."],
+    ["The cover changed. Reopen the release list.", "The cover changed. Reopen the release list."],
+    ["Couldn't restore the VN cover. Try again.", "Couldn't restore the VN cover. Try again."],
+    ["The selected release has changed. Reopen the release list.", "The selected release has changed. Reopen the release list."],
     ["couldn't read the VN's original language: detail\nmore", "couldn't read the VN's original language: {error}", "detail\nmore"],
     ["couldn't read VNDB releases: detail {id}", "couldn't read VNDB releases: {error}", "detail {id}"],
     ["VNDB returned an invalid release date for r123.", "VNDB returned an invalid release date for {id}.", "r123"],

@@ -185,7 +185,7 @@ pub async fn set_game_release(
         {
             let mut cfg = shared.config.lock().unwrap();
             if keep_cover && is_release_cover(&cfg.game(&key)) {
-                return Err("The cover changed. Please reopen the release list.".into());
+                return Err("The cover changed. Reopen the release list.".into());
             }
             cfg.set_game(&key, values);
         }
@@ -211,7 +211,7 @@ fn clear_release_fields(
     ]);
     if is_release_cover(entry) {
         let nsfw = vn_cover_nsfw
-            .ok_or_else(|| "Couldn't restore the VN cover. Please try again.".to_string())?;
+            .ok_or_else(|| "Couldn't restore the VN cover. Try again.".to_string())?;
         values.extend(fields(&[("cover_source", "vndb"), ("cover_value", vn_id)]));
         values.insert("cover_nsfw".into(), json!(nsfw));
     }
@@ -272,7 +272,7 @@ fn validate_release_selection(
         || entry.get("vndb_id").and_then(Value::as_str) != Some(vn_id)
         || entry.get("vndb_release_id").and_then(Value::as_str) != Some(release_id)
     {
-        return Err("The selected release has changed. Please reopen the release list.".into());
+        return Err("The selected release has changed. Reopen the release list.".into());
     }
     Ok(())
 }
