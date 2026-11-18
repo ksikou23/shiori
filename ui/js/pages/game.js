@@ -47,7 +47,8 @@ const TEMPLATE = `
 
   <div class="banner info dupe" data-id="dupe" hidden>
     <i></i><span data-id="dupe-text"></span>
-    <button class="btn small" data-id="dupe-merge">Merge them</button>
+    <button class="btn small" data-id="dupe-release">Choose release…</button>
+    <button class="btn secondary small" data-id="dupe-merge">Merge them</button>
   </div>
 
   <div class="game-grid">
@@ -338,7 +339,11 @@ function renderVndb(entry) {
     );
 
   if (vnId) {
-    box.replaceChildren(link(vnId));
+    const children = [link(vnId)];
+    if (entry.vndb_release_id) {
+      children.push(link(entry.vndb_release_id));
+    }
+    box.replaceChildren(...children);
   } else if (matched) {
     const confirm = el("button", { class: "btn small", onclick: confirmMatch }, "Confirm");
     box.replaceChildren(
@@ -509,16 +514,22 @@ function renderStats(entry) {
 }
 
 function renderDuplicates() {
-  const other = game.duplicates[0];
+  const releaseId = game.entry.vndb_release_id;
+  const other = releaseId
+    ? game.duplicates.find((candidate) =>
+        candidate.vndb_id === game.entry.vndb_id && candidate.vndb_release_id === releaseId)
+    : game.duplicates[0];
   part("dupe").hidden = !other;
-  if (!other) {
+  if (part("dupe").hidden) {
     return;
   }
+  part("dupe-release").hidden = false;
   part("dupe-text").textContent = t("Looks like the same game as “{name}” ({time} read).", {
     name: other.name,
     time: formatPlaytime(other.playtime),
   });
   part("dupe-merge").onclick = () => mergeWith(other);
+  part("dupe-release").onclick = () => show("cover", { key, back: "game", chooseRelease: true });
 }
 
 async function mergeWith(other) {

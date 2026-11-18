@@ -283,6 +283,10 @@
   margin-left: auto;
 }
 
+.dupe .btn + .btn {
+  margin-left: 0;
+}
+
 .view-menu .menu button {
   white-space: nowrap;
 }

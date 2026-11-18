@@ -6,6 +6,12 @@ use serde_json::{json, Map, Value};
 
 pub type Entry = Map<String, Value>;
 
+pub fn selected_release_title(entry: &Entry) -> Option<&str> {
+    let id = entry.get("vndb_release_id")?.as_str()?;
+    let title = entry.get("vndb_release_title")?.as_str()?;
+    (!id.trim().is_empty() && !title.trim().is_empty()).then_some(title)
+}
+
 pub const STATUSES: [&str; 4] = ["playing", "finished", "stalled", "dropped"];
 
 fn defaults() -> Map<String, Value> {
@@ -82,6 +88,7 @@ fn defaults() -> Map<String, Value> {
         "vndb_sync": false,
         "vndb_import_finished": false,
         "vndb_mark_playing": true,
+        "vndb_release_medium": "",
         "screenshot_hotkey": "PrintScreen",
         "screenshot_volume": 30,
         "clip_enabled": true,
@@ -588,6 +595,11 @@ impl Config {
 
     pub fn set_game(&mut self, key: &str, fields: Map<String, Value>) {
         let entry = self.games.entry(key.to_string()).or_default();
+        if fields.get("cover_source").and_then(Value::as_str)
+            .is_some_and(|source| source != "vndb_release")
+        {
+            entry.remove("cover_public_safe");
+        }
         if fields.get("status").and_then(Value::as_str) == Some("finished")
             && entry.get("status").and_then(Value::as_str) != Some("finished")
         {
@@ -679,7 +691,7 @@ impl Config {
         let (source, value) = (text(entry, "cover_source"), text(entry, "cover_value"));
         if !value.is_empty() && !shared_value("cover_value", &value) {
             match source.as_str() {
-                "url" => stems.push(url_cache_key(&value)),
+                "url" | "vndb_release" => stems.push(url_cache_key(&value)),
                 "local" => files.push(PathBuf::from(&value)),
                 _ => {}
             }
@@ -845,7 +857,7 @@ impl Config {
             return Some(PathBuf::from(value));
         }
         let mut stems = Vec::new();
-        if source == "url" && !value.is_empty() {
+        if matches!(source.as_str(), "url" | "vndb_release") && !value.is_empty() {
             stems.push(url_cache_key(&value));
         }
         let vn_id = if s("vndb_id").is_empty() {
@@ -853,7 +865,7 @@ impl Config {
         } else {
             s("vndb_id")
         };
-        if !vn_id.is_empty() {
+        if source != "vndb_release" && !vn_id.is_empty() {
             stems.push(vn_id);
         }
         let files: Vec<PathBuf> = fs::read_dir(self.covers_dir())
@@ -893,6 +905,16 @@ mod tests {
     }
 
     #[test]
+    fn default_release_medium_survives_settings_reload() {
+        let mut cfg = library("release-medium-setting");
+        assert_eq!(cfg.str("vndb_release_medium"), "");
+        for value in ["package", "download", ""] {
+            cfg.update(Map::from_iter([("vndb_release_medium".into(), json!(value))])).unwrap();
+            assert_eq!(Config::load(&cfg.dir).str("vndb_release_medium"), value);
+        }
+    }
+
+    #[test]
     fn old_ctrl_keys_move_to_alt() {
         let mut cfg = library("ctrl-keys");
         let changes = [
@@ -910,6 +932,18 @@ mod tests {
 
     fn add(cfg: &mut Config, key: &str, fields: Value) {
         cfg.set_game(key, fields.as_object().cloned().unwrap_or_default());
+    }
+
+    #[test]
+    fn release_cover_public_safety_is_cleared_when_cover_changes() {
+        let mut cfg = library("cover-public-safety");
+        add(&mut cfg, "game", json!({
+            "cover_source": "vndb_release", "cover_value": "https://example.com/new.jpg",
+            "cover_public_safe": true
+        }));
+        cfg.set_game("game", Map::from_iter([("cover_source".into(), json!("url"))]));
+        let entry = Config::load(&cfg.dir).game("game");
+        assert!(!entry.contains_key("cover_public_safe"));
     }
 
     #[test]
@@ -971,6 +1005,32 @@ mod tests {
         assert_eq!(names("b"), vec!["mine.png".to_string()]);
         assert!(names("d").is_empty());
         let _ = fs::remove_file(outside);
+    }
+
+    #[test]
+    fn vndb_release_cover_is_cached_and_shared_like_a_url_cover() {
+        let mut cfg = library("release-cover");
+        let url = "https://t.vndb.org/cv/1/1.jpg";
+        let file = cfg.covers_dir().join(format!("{}.jpg", url_cache_key(url)));
+        fs::create_dir_all(cfg.covers_dir()).unwrap();
+        fs::write(&file, "image").unwrap();
+        add(&mut cfg, "a", json!({
+            "vndb_id": "v1", "cover_source": "vndb_release", "cover_value": url,
+            "cover_public_safe": true,
+            "vndb_release_id": "r1", "vndb_release_title": "Release",
+            "vndb_release_alttitle": "Original"
+        }));
+        assert_eq!(cfg.cached_cover(&cfg.game("a")), Some(file.clone()));
+        assert!(cfg.files_of("a").contains(&file));
+        add(&mut cfg, "b", json!({ "cover_source": "vndb_release", "cover_value": url }));
+        assert!(!cfg.files_of("a").contains(&file));
+        let loaded = Config::load(&cfg.dir).game("a");
+        assert_eq!(loaded["vndb_release_id"], "r1");
+        assert_eq!(loaded["vndb_release_title"], "Release");
+        assert_eq!(loaded["vndb_release_alttitle"], "Original");
+        fs::write(cfg.covers_dir().join("v1.jpg"), "vn image").unwrap();
+        fs::remove_file(&file).unwrap();
+        assert_eq!(cfg.cached_cover(&loaded), None);
     }
 
     #[test]

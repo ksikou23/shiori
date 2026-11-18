@@ -68,17 +68,23 @@ pub fn upgrade_templates(custom: &mut Value) {
     }
 }
 
+pub fn original_title(snap: &Snapshot, entry: &Map<String, Value>) -> String {
+    if crate::config::selected_release_title(entry).is_some() {
+        return text(entry, "vndb_release_alttitle").trim().to_string();
+    }
+    snap.vn
+        .as_ref()
+        .map(|vn| vn.alt_title.trim().to_string())
+        .unwrap_or_default()
+}
+
 pub fn vars(snap: &Snapshot, entry: &Map<String, Value>, original_first: bool, language: &str) -> Vars {
     let romanized = [&snap.game_name, &snap.raw_title]
         .into_iter()
         .find(|n| !n.is_empty())
         .cloned()
         .unwrap_or_else(|| "Visual Novel".into());
-    let original = snap
-        .vn
-        .as_ref()
-        .map(|vn| vn.alt_title.trim().to_string())
-        .unwrap_or_default();
+    let original = original_title(snap, entry);
     let title = if original_first && !original.is_empty() {
         original.clone()
     } else {
@@ -264,6 +270,27 @@ pub fn apply(activity: &mut Activity, custom: &Value, vars: &Vars, session_start
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_original_title_does_not_fall_back_to_an_unrelated_vn_title() {
+        let snap = Snapshot {
+            game_name: "Release".into(),
+            vn: Some(crate::vndb::VnResult { alt_title: "VN original".into(), ..Default::default() }),
+            ..Default::default()
+        };
+        let mut entry = Map::from_iter([
+            ("vndb_release_id".into(), Value::from("r1")),
+            ("vndb_release_title".into(), Value::from("Release")),
+            ("vndb_release_alttitle".into(), Value::from("Release original")),
+        ]);
+        assert_eq!(original_title(&snap, &entry), "Release original");
+        assert_eq!(vars(&snap, &entry, true, "en")[0].1, "Release original");
+        entry.insert("vndb_release_alttitle".into(), Value::from(""));
+        assert_eq!(original_title(&snap, &entry), "");
+        assert_eq!(vars(&snap, &entry, true, "en")[0].1, "Release");
+        entry.insert("vndb_release_id".into(), Value::from(""));
+        assert_eq!(original_title(&snap, &entry), "VN original");
+    }
 
     fn sample() -> Vars {
         let mut vars = sample_vars("en");

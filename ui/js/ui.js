@@ -1,5 +1,5 @@
 import { $, el } from "./dom.js";
-import { t } from "./i18n.js";
+import { t, translateError } from "./i18n.js";
 import { invoke, fileUrl } from "./tauri.js";
 import { store } from "./store.js";
 
@@ -19,7 +19,7 @@ export async function call(command, args) {
   try {
     return await invoke(command, args);
   } catch (error) {
-    toast(typeof error === "string" ? error : error?.detail || JSON.stringify(error), {
+    toast(translateError(typeof error === "string" ? error : error?.detail || JSON.stringify(error)), {
       error: true,
     });
     throw error;
@@ -99,6 +99,7 @@ export function openDialog({
   wide = false,
   width = null,
   onOpen = null,
+  closeOnBackdrop = false,
 }) {
   return new Promise((resolve) => {
     const size = width || (wide ? 760 : null);
@@ -128,6 +129,19 @@ export function openDialog({
       event.preventDefault();
       finish(null);
     });
+    if (closeOnBackdrop) {
+      const outside = (event) => {
+        const rect = dialog.getBoundingClientRect();
+        return event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right
+          || event.clientY < rect.top || event.clientY > rect.bottom);
+      };
+      let pressedOutside = false;
+      dialog.addEventListener("pointerdown", (event) => (pressedOutside = outside(event)));
+      dialog.addEventListener("click", (event) => {
+        if (pressedOutside && outside(event)) finish(null);
+        pressedOutside = false;
+      });
+    }
 
     document.body.append(dialog);
     dialog.showModal();

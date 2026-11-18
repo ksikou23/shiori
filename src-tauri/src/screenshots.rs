@@ -204,6 +204,9 @@ pub fn games_with_shots(cfg: &mut Config) -> Vec<GameShots> {
 }
 
 pub fn display_name(key: &str, entry: &Map<String, Value>) -> String {
+    if let Some(title) = crate::config::selected_release_title(entry) {
+        return title.to_string();
+    }
     [text(entry, "title"), text(entry, "name")]
         .into_iter()
         .find(|t| !t.is_empty())
@@ -376,6 +379,24 @@ fn capture_and_save(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_name_uses_selected_release_and_falls_back_when_cleared() {
+        let mut entry = Map::from_iter([
+            ("title".into(), json!("VN title")),
+            ("vndb_release_id".into(), json!("r1")),
+            ("vndb_release_title".into(), json!("Release title")),
+        ]);
+        assert_eq!(display_name("game", &entry), "Release title");
+        entry.insert("vndb_release_id".into(), json!(""));
+        assert_eq!(display_name("game", &entry), "VN title");
+        entry.insert("vndb_release_id".into(), json!("r1"));
+        entry.insert("vndb_release_title".into(), json!("  "));
+        assert_eq!(display_name("game", &entry), "VN title");
+        entry.remove("title");
+        entry.insert("name".into(), json!("Detected name"));
+        assert_eq!(display_name("game", &entry), "Detected name");
+    }
 
     #[test]
     fn folder_names_are_windows_safe() {

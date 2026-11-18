@@ -11,6 +11,7 @@ import { languagePicker } from "../components/language-picker.js";
 import { plural, t } from "../i18n.js";
 import { presenceBuilder } from "./presence.js";
 import { communityTab } from "../components/community-tab.js";
+import { defaultReleaseMedium } from "../release-filters.js";
 
 const TEMPLATE = `
   <div class="page-head">
@@ -324,6 +325,15 @@ function idlePresence() {
 }
 
 function coversSection() {
+  const medium = el(
+    "select",
+    { "aria-label": "Default release medium" },
+    el("option", { value: "" }, "Any"),
+    el("option", { value: "package" }, "Package"),
+    el("option", { value: "download" }, "Download"),
+  );
+  medium.value = defaultReleaseMedium(store.settings.vndb_release_medium);
+  medium.onchange = () => save({ vndb_release_medium: medium.value });
   return [
     section("Covers & matching"),
     setting(
@@ -336,6 +346,8 @@ function coversSection() {
       "Use Steam library names",
       "Gives much better VNDB matches for games installed through Steam.",
     ),
+    el("div", { class: "field" }, el("span", {}, "Default release medium"), medium),
+    hint("The initial medium filter when choosing a VNDB release."),
   ];
 }
 

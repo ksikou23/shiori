@@ -1,5 +1,6 @@
 import { el } from "../dom.js";
 import { show } from "../router.js";
+import { chooseReleaseForGame } from "../pages/cover.js";
 import { store, subscribe } from "../store.js";
 import { call, openDialog, setCover, toast } from "../ui.js";
 import { t } from "../i18n.js";
@@ -73,14 +74,18 @@ async function ask(snap) {
       !snap.emulator && { label: "Not a VN", kind: "danger", value: "not-vn" },
       { label: "Later", kind: "secondary", value: null },
       { label: snap.vn ? "Pick another VN…" : "Pick it on VNDB…", kind: snap.vn ? "secondary" : "", value: "pick" },
+      snap.vn && { label: "Yes, choose a release…", kind: "secondary", value: "yes-release" },
       snap.vn && { label: "Yes, that's it", value: "yes" },
     ].filter(Boolean),
   });
   open = false;
 
-  if (answer === "yes") {
+  if (answer === "yes" || answer === "yes-release") {
     await call("confirm_match", { key: snap.key });
     toast(t("Saved: {name}", { name: snap.vn.title }));
+    if (answer === "yes-release") {
+      await chooseReleaseForGame(snap.key, snap.vn);
+    }
     await offerVndbList();
   } else if (answer === "pick") {
     await call("match_checked", { key: snap.key });

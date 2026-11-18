@@ -92,6 +92,157 @@ pub struct ReleaseCover {
     pub nsfw: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReleaseImage {
+    pub url: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub sexual: Option<f64>,
+    pub violence: Option<f64>,
+}
+
+impl ReleaseImage {
+    pub fn nsfw(&self) -> bool {
+        self.sexual.unwrap_or(0.0) >= 1.0 || self.violence.unwrap_or(0.0) >= 1.0
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReleaseLanguage {
+    pub lang: String,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReleaseMedium {
+    pub medium: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReleaseVn {
+    pub id: String,
+    pub rtype: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Release {
+    pub id: String,
+    pub title: String,
+    pub alttitle: Option<String>,
+    pub released: String,
+    pub official: bool,
+    pub patch: bool,
+    pub platforms: Vec<String>,
+    pub languages: Vec<ReleaseLanguage>,
+    pub media: Vec<ReleaseMedium>,
+    pub vns: Vec<ReleaseVn>,
+    pub images: Vec<ReleaseImage>,
+}
+
+impl Release {
+    pub fn alternate_title(&self, original_language: Option<&str>) -> &str {
+        self.languages
+            .iter()
+            .filter(|language| Some(language.lang.as_str()) == original_language)
+            .filter_map(|language| language.title.as_deref())
+            .chain(self.alttitle.as_deref())
+            .map(str::trim)
+            .find(|title| !title.is_empty() && *title != self.title.trim())
+            .unwrap_or("")
+    }
+
+    pub fn cover(&self) -> Option<&ReleaseImage> {
+        ["pkgfront", "dig"].iter().find_map(|kind| {
+            self.images
+                .iter()
+                .find(|image| image.kind == *kind && !image.url.is_empty())
+        })
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct ReleaseList {
+    pub original_language: Option<String>,
+    pub releases: Vec<Release>,
+}
+
+#[derive(serde::Deserialize)]
+struct OriginalLanguage {
+    olang: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct OriginalLanguageResponse {
+    results: Vec<OriginalLanguage>,
+}
+
+fn original_language(data: Value) -> Result<Option<String>, String> {
+    let response: OriginalLanguageResponse = serde_json::from_value(data)
+        .map_err(|error| format!("couldn't read the VN's original language: {error}"))?;
+    let vn = response.results.into_iter().next()
+        .ok_or_else(|| "Couldn't find the selected VN on VNDB.".to_string())?;
+    Ok(vn.olang.filter(|language| !language.trim().is_empty()))
+}
+
+#[derive(serde::Deserialize)]
+struct ReleasePage {
+    results: Vec<Release>,
+    more: bool,
+}
+
+fn collect_releases(
+    id: &str,
+    mut fetch: impl FnMut(usize) -> Result<ReleasePage, String>,
+) -> Result<Vec<Release>, String> {
+    let mut releases = Vec::new();
+    let mut page = 1;
+    loop {
+        let response = fetch(page)?;
+        if response.more && response.results.is_empty() {
+            return Err("VNDB returned an empty release page with more results".into());
+        }
+        if response.results.iter().any(|release| !release.vns.iter().any(|vn| vn.id == id)) {
+            return Err("VNDB returned a release that does not belong to the selected VN.".into());
+        }
+        releases.extend(response.results);
+        if !response.more {
+            return Ok(releases);
+        }
+        page += 1;
+    }
+}
+
+fn collect_selected_release_dates(
+    ids: &[String],
+    mut fetch: impl FnMut(&Value) -> Result<Value, String>,
+) -> Result<HashMap<String, String>, String> {
+    let mut dates = HashMap::new();
+    for chunk in ids.chunks(100) {
+        let mut filters = vec![json!("or")];
+        filters.extend(chunk.iter().map(|id| json!(["id", "=", id])));
+        let filters = if chunk.len() == 1 {
+            filters[1].clone()
+        } else {
+            Value::Array(filters)
+        };
+        let body = json!({"filters": filters, "fields": "released", "results": 100});
+        let data = fetch(&body)?;
+        let results = data["results"]
+            .as_array()
+            .ok_or_else(|| "Couldn't read release dates from VNDB.".to_string())?;
+        for release in results {
+            let id = release["id"]
+                .as_str()
+                .ok_or_else(|| "VNDB returned a release without an ID.".to_string())?;
+            let date = release["released"]
+                .as_str()
+                .ok_or_else(|| format!("VNDB returned an invalid release date for {id}."))?;
+            dates.insert(id.to_string(), date.to_string());
+        }
+    }
+    Ok(dates)
+}
+
 pub struct Vndb {
     http: reqwest::blocking::Client,
     last_call: Mutex<Instant>,
@@ -285,6 +436,10 @@ impl Vndb {
         Ok(out)
     }
 
+    pub fn selected_release_dates(&self, ids: &[String]) -> Result<HashMap<String, String>, String> {
+        collect_selected_release_dates(ids, |body| self.post("/release", body))
+    }
+
     pub fn description(&self, id: &str) -> Result<String, String> {
         let id = vn_id(id);
         let cache = self.cache_dir.join(format!("desc_{id}.json"));
@@ -320,6 +475,28 @@ impl Vndb {
         let _ = fs::create_dir_all(&self.cache_dir);
         let _ = fs::write(&cache, results.to_string());
         Ok(results)
+    }
+
+    pub fn releases(&self, id: &str) -> Result<ReleaseList, String> {
+        let id = vn_id(id);
+        let body = json!({
+            "filters": ["id", "=", id],
+            "fields": "olang",
+            "results": 1,
+        });
+        let original_language = original_language(self.post("/vn", &body)?)?;
+        let releases = collect_releases(&id, |page| {
+            let body = json!({
+                "filters": ["vn", "=", ["id", "=", id]],
+                "fields": "title,alttitle,released,official,patch,platforms,languages.lang,languages.title,media.medium,vns.id,vns.rtype,images.url,images.type,images.sexual,images.violence",
+                "results": 100,
+                "page": page,
+                "sort": "released",
+            });
+            serde_json::from_value(self.post("/release", &body)?)
+                .map_err(|error| format!("couldn't read VNDB releases: {error}"))
+        })?;
+        Ok(ReleaseList { original_language, releases })
     }
 
     pub fn release_covers(&self, id: &str) -> Result<Vec<ReleaseCover>, String> {
@@ -663,5 +840,126 @@ mod tests {
         let mut entry = vn("v3", "Romanized Name", 8.0);
         entry.other_titles = vec!["素晴らしき日々".into()];
         assert_eq!(best_match(vec![entry], "素晴らしき日々").map(|v| v.id), Some("v3".into()));
+    }
+
+    fn release(id: &str, rtype: &str) -> Release {
+        serde_json::from_value(json!({
+            "id": id, "title": "Title", "alttitle": null, "released": "2022-10-28",
+            "official": true, "patch": false, "platforms": ["win"],
+            "languages": [{"lang": "ja", "title": "Japanese title"}],
+            "media": [{"medium": "dvd"}],
+            "vns": [{"id": "v1", "rtype": rtype}], "images": []
+        })).unwrap()
+    }
+
+    #[test]
+    fn original_language_handles_unknown_and_invalid_responses() {
+        assert_eq!(original_language(json!({"results": [{"olang": "en"}]})).unwrap(), Some("en".into()));
+        assert!(original_language(json!({"results": []})).is_err());
+        assert_eq!(original_language(json!({"results": [{"olang": ""}]})).unwrap(), None);
+        assert_eq!(original_language(json!({"results": [{"olang": null}]})).unwrap(), None);
+        assert!(original_language(json!({"results": [{"olang": 1}]})).is_err());
+    }
+
+    #[test]
+    fn selected_release_dates_skip_missing_ids_and_fetch_later_chunks() {
+        let ids: Vec<_> = (1..=101).map(|id| format!("r{id}")).collect();
+        let mut requests = 0;
+        let dates = collect_selected_release_dates(&ids, |_| {
+            requests += 1;
+            Ok(if requests == 1 {
+                json!({"results": [{"id": "r1", "released": "2022-10-28"}]})
+            } else {
+                json!({"results": [{"id": "r101", "released": "TBA"}]})
+            })
+        }).unwrap();
+        assert_eq!(requests, 2);
+        assert_eq!(dates.get("r1").map(String::as_str), Some("2022-10-28"));
+        assert_eq!(dates.get("r101").map(String::as_str), Some("TBA"));
+        assert!(!dates.contains_key("r2"));
+    }
+
+    #[test]
+    fn selected_release_dates_report_invalid_responses_and_request_errors() {
+        let ids = vec!["r1".to_string()];
+        assert!(collect_selected_release_dates(&ids, |_| Err("network error".into())).is_err());
+        assert!(collect_selected_release_dates(&ids, |_| Ok(json!({}))).is_err());
+        assert!(collect_selected_release_dates(&ids, |_| Ok(json!({"results": [{"released": "TBA"}]}))).is_err());
+        assert!(collect_selected_release_dates(&ids, |_| Ok(json!({"results": [{"id": "r1", "released": null}]}))).is_err());
+    }
+
+    #[test]
+    fn release_pages_are_all_collected_and_failures_are_reported() {
+        let mut pages = Vec::new();
+        let results = collect_releases("v1", |page| {
+            pages.push(page);
+            Ok(ReleasePage {
+                results: vec![release(if page == 1 { "r1" } else { "r2" }, if page == 1 { "partial" } else { "trial" })],
+                more: page == 1,
+            })
+        }).unwrap();
+        assert_eq!(pages, [1, 2]);
+        assert_eq!(results.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["r1", "r2"]);
+        assert!(collect_releases("v1", |page| {
+            if page == 1 {
+                Ok(ReleasePage { results: vec![release("r1", "complete")], more: true })
+            } else {
+                Err("page failed".into())
+            }
+        }).is_err());
+        assert!(collect_releases("v1", |_| {
+            Ok(ReleasePage { results: vec![], more: true })
+        }).is_err());
+        assert!(collect_releases("v2", |_| {
+            Ok(ReleasePage { results: vec![release("r1", "complete")], more: false })
+        }).is_err());
+    }
+
+    #[test]
+    fn release_prefers_original_name_and_front_cover() {
+        let mut item = release("r1", "partial");
+        item.images = serde_json::from_value(json!([
+            {"url": "back", "type": "pkgback", "sexual": 0, "violence": 0},
+            {"url": "digital", "type": "dig", "sexual": 0, "violence": 0},
+            {"url": "front", "type": "pkgfront", "sexual": 1, "violence": 0}
+        ])).unwrap();
+        assert_eq!(item.alternate_title(Some("ja")), "Japanese title");
+        assert_eq!(item.alternate_title(Some("en")), "");
+        item.languages.push(ReleaseLanguage { lang: "en".into(), title: Some("English title".into()) });
+        assert_eq!(item.alternate_title(Some("en")), "English title");
+        item.languages.pop();
+        item.alttitle = Some(" Alternative ".into());
+        assert_eq!(item.alternate_title(Some("en")), "Alternative");
+        item.alttitle = Some(" Title ".into());
+        assert_eq!(item.alternate_title(None), "");
+        assert_eq!(item.cover().unwrap().url, "front");
+        assert!(item.cover().unwrap().nsfw());
+        item.images.retain(|image| image.kind == "pkgback");
+        assert!(item.cover().is_none());
+    }
+
+    #[test]
+    #[ignore = "requires access to the VNDB API"]
+    fn live_releases_include_selected_release_and_cover() {
+        let client = Vndb::new(&std::env::temp_dir());
+        let response = client.post("/release", &json!({
+            "filters": ["id", ">=", "r1"],
+            "fields": "vns.id,images.url,images.type",
+            "results": 100
+        })).unwrap();
+        let candidate = response["results"].as_array().unwrap().iter().find(|release| {
+            release["vns"].as_array().is_some_and(|vns| !vns.is_empty())
+                && release["images"].as_array().is_some_and(|images| images.iter().any(|image| {
+                    matches!(image["type"].as_str(), Some("pkgfront" | "dig"))
+                        && image["url"].as_str().is_some_and(|url| !url.is_empty())
+                }))
+        }).expect("VNDB returned no release with a VN and cover");
+        let vn_id = candidate["vns"][0]["id"].as_str().unwrap();
+        let release_id = candidate["id"].as_str().unwrap();
+        let result = client.releases(vn_id).unwrap();
+        let selected = result.releases.iter().find(|item| item.id == release_id).unwrap();
+        assert!(selected.cover().is_some());
+        let dates = client.selected_release_dates(&[release_id.to_string()]).unwrap();
+        assert_eq!(dates[release_id], selected.released);
     }
 }

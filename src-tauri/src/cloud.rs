@@ -343,8 +343,13 @@ fn vndb_cover(url: &str) -> Option<String> {
     valid.then(|| path.to_string())
 }
 
+pub(crate) fn safe_image_scores(sexual: Option<f64>, violence: Option<f64>) -> bool {
+    sexual.is_some_and(|score| score < PUBLIC_SEXUAL)
+        && violence.is_some_and(|score| score < 1.0)
+}
+
 fn safe_image(image: &Value) -> bool {
-    image["sexual"].as_f64().unwrap_or(2.0) < PUBLIC_SEXUAL && image["violence"].as_f64().unwrap_or(2.0) < 1.0
+    safe_image_scores(image["sexual"].as_f64(), image["violence"].as_f64())
 }
 
 fn vndb_image(shared: &Shared, id: &str, fetch: bool) -> Option<Value> {
@@ -362,6 +367,9 @@ fn vndb_image(shared: &Shared, id: &str, fetch: bool) -> Option<Value> {
 
 fn cover_path(shared: &Shared, entry: &Map<String, Value>, fetch: bool) -> Option<(String, bool)> {
     let flagged = entry.get("cover_nsfw").and_then(Value::as_bool).unwrap_or(false);
+    if entry_text(entry, "cover_source") == "vndb_release" {
+        return release_cover_path(entry);
+    }
     let image = vndb_id(entry).and_then(|id| vndb_image(shared, &id, fetch));
     let unsafe_image = image.as_ref().is_none_or(|image| !safe_image(image));
     let path = match entry_text(entry, "cover_source").as_str() {
@@ -370,6 +378,13 @@ fn cover_path(shared: &Shared, entry: &Map<String, Value>, fetch: bool) -> Optio
         _ => vndb_cover(image.as_ref()?["url"].as_str()?)?,
     };
     Some((path, flagged || unsafe_image))
+}
+
+fn release_cover_path(entry: &Map<String, Value>) -> Option<(String, bool)> {
+    let path = vndb_cover(&entry_text(entry, "cover_value"))?;
+    let safe = entry.get("cover_public_safe").and_then(Value::as_bool) == Some(true);
+    let flagged = entry.get("cover_nsfw").and_then(Value::as_bool).unwrap_or(true);
+    Some((path, flagged || !safe))
 }
 
 fn vndb_id(entry: &Map<String, Value>) -> Option<String> {
@@ -534,6 +549,24 @@ mod tests {
         assert!(!safe_image(&json!({ "sexual": 0.93, "violence": 0 })));
         assert!(!safe_image(&json!({ "sexual": 0, "violence": 1.2 })));
         assert!(!safe_image(&json!({})));
+    }
+
+    #[test]
+    fn release_cover_uses_its_own_image_and_public_safety() {
+        let mut entry = Map::from_iter([
+            ("cover_value".into(), json!("https://t.vndb.org/cv/12/123456789.jpg")),
+            ("cover_nsfw".into(), json!(false)),
+            ("cover_public_safe".into(), json!(true)),
+        ]);
+        assert_eq!(release_cover_path(&entry), Some(("12/123456789.jpg".into(), false)));
+        entry.insert("cover_public_safe".into(), json!(false));
+        assert_eq!(release_cover_path(&entry), Some(("12/123456789.jpg".into(), true)));
+        entry.remove("cover_public_safe");
+        assert_eq!(release_cover_path(&entry), Some(("12/123456789.jpg".into(), true)));
+        entry.insert("cover_value".into(), json!("https://example.com/image.jpg"));
+        assert_eq!(release_cover_path(&entry), None);
+        assert!(!safe_image_scores(Some(0.5), Some(0.0)));
+        assert!(!safe_image_scores(Some(0.0), None));
     }
 
     #[test]
