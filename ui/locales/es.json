@@ -1135,6 +1135,20 @@
     "No other open app": "No hay otra app abierta",
     "Data": "Datos",
     "Backup file": "Archivo de copia",
-    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Los títulos original e inglés vienen de VNDB. Las VN que no los tienen conservan el título romanizado."
+    "{name}'s voice & pictures": "Voz e imágenes de {name}",
+    "Voices & pictures…": "Voces e imágenes…",
+    "Add a picture…": "Añadir una imagen…",
+    "Choose a picture": "Elegir una imagen",
+    "Picture change": "Cambio de imagen",
+    "Dissolve": "Fundido",
+    "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.": "Las imágenes funcionan igual: la mascota muestra la imagen mientras la frase está en pantalla y luego vuelve a su aspecto normal.",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Los títulos original e inglés vienen de VNDB. Las VN que no los tienen conservan el título romanizado.",
+    "Preview…": "Vista previa…",
+    "Preview {name}": "Vista previa de {name}",
+    "Play the next line": "Reproducir la siguiente frase",
+    "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.": "Cada clic muestra la siguiente frase con su burbuja, imagen y voz, para revisarlas una a una.",
+    "Show this mascot first.": "Muestra primero esta mascota.",
+    "The mascots are tucked away right now.": "Las mascotas están escondidas ahora.",
+    "No line for this moment.": "No hay frase para este momento."
   }
 }

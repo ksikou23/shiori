@@ -1135,6 +1135,20 @@
     "No other open app": "Других открытых приложений нет",
     "Data": "Данные",
     "Backup file": "Файл резервной копии",
-    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Оригинальное и английское названия берутся из VNDB. Если их нет, остаётся название латиницей."
+    "{name}'s voice & pictures": "Голос и картинки: {name}",
+    "Voices & pictures…": "Голоса и картинки…",
+    "Add a picture…": "Добавить картинку…",
+    "Choose a picture": "Выберите картинку",
+    "Picture change": "Смена картинки",
+    "Dissolve": "Растворение",
+    "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.": "Картинки работают так же: маскот показывает картинку, пока реплика на экране, а потом возвращается к обычному виду.",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Оригинальное и английское названия берутся из VNDB. Если их нет, остаётся название латиницей.",
+    "Preview…": "Предпросмотр…",
+    "Preview {name}": "Предпросмотр: {name}",
+    "Play the next line": "Следующая реплика",
+    "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.": "Каждый клик показывает следующую реплику с облачком, картинкой и голосом, чтобы проверить их по одной.",
+    "Show this mascot first.": "Сначала покажите этого маскота.",
+    "The mascots are tucked away right now.": "Маскоты сейчас спрятаны.",
+    "No line for this moment.": "Для этого момента нет реплик."
   }
 }

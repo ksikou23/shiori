@@ -1135,6 +1135,20 @@
     "No other open app": "Aucune autre app ouverte",
     "Data": "Données",
     "Backup file": "Fichier de sauvegarde",
-    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Le titre original et le titre anglais viennent de VNDB. Les VN qui n'en ont pas gardent le titre romanisé."
+    "{name}'s voice & pictures": "Voix et images de {name}",
+    "Voices & pictures…": "Voix et images…",
+    "Add a picture…": "Ajouter une image…",
+    "Choose a picture": "Choisir une image",
+    "Picture change": "Changement d'image",
+    "Dissolve": "Fondu",
+    "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.": "Les images marchent pareil : la mascotte montre l'image tant que la réplique est affichée, puis reprend son apparence habituelle.",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Le titre original et le titre anglais viennent de VNDB. Les VN qui n'en ont pas gardent le titre romanisé.",
+    "Preview…": "Aperçu…",
+    "Preview {name}": "Aperçu de {name}",
+    "Play the next line": "Jouer la réplique suivante",
+    "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.": "Chaque clic montre la réplique suivante avec sa bulle, son image et sa voix, pour tout vérifier une par une.",
+    "Show this mascot first.": "Affiche d'abord cette mascotte.",
+    "The mascots are tucked away right now.": "Les mascottes sont rangées pour le moment.",
+    "No line for this moment.": "Aucune réplique pour ce moment."
   }
 }

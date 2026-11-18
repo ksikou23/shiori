@@ -428,8 +428,10 @@ async function mascotSettings(item, personalities) {
     "Clicks go through it.",
   );
 
-  const voices = el("button", { class: "btn secondary small" }, "Voices & moments…");
+  const voices = el("button", { class: "btn secondary small" }, "Voices & pictures…");
   voices.onclick = () => editVoices(item);
+  const tryIt = el("button", { class: "btn secondary small" }, "Preview…");
+  tryIt.onclick = () => previewMascot(item);
   const bubble = el("button", { class: "btn secondary small" }, "Bubble…");
   bubble.onclick = () => editBalloon(item);
   const share = el("button", { class: "btn secondary small" }, "Share…");
@@ -454,7 +456,7 @@ async function mascotSettings(item, personalities) {
     el("div", { class: "row" }, editLines),
     el("div", { class: "field-label" }, "Talking"),
     silent,
-    el("div", { class: "row" }, voices, bubble),
+    el("div", { class: "row" }, voices, bubble, tryIt),
     el("div", { class: "field-label" }, "On the desktop"),
     viewOnly,
     el("div", { class: "row mascot-extra" }, share, changePicture, remove),
@@ -729,12 +731,72 @@ function voiceVolume(item) {
   );
 }
 
+const SPRITE_EFFECTS = [
+  ["dissolve", "Dissolve"],
+  ["bounce", "Bounce"],
+  ["pop", "Pop"],
+  ["none", "None"],
+];
+
+function spriteEffect(item) {
+  const current = store.settings.mascot_sprite_effects?.[item.id] || "dissolve";
+  const select = el(
+    "select",
+    {},
+    ...SPRITE_EFFECTS.map(([value, label]) => el("option", { value, selected: value === current }, t(label))),
+  );
+  select.onchange = async () => {
+    await call("set_mascot_sprite_effect", { id: item.id, effect: select.value });
+    store.settings.mascot_sprite_effects = { ...(store.settings.mascot_sprite_effects || {}), [item.id]: select.value };
+  };
+  return el("div", { class: "field" }, el("span", {}, "Picture change"), select);
+}
+
+async function previewMascot(item) {
+  const next = {};
+  const rows = VOICE_MOMENTS.map(([moment, label]) => {
+    const count = el("span", { class: "muted small-text preview-count" });
+    const play = el("button", { class: "btn secondary small", title: "Play the next line" }, "▶");
+    play.onclick = async () => {
+      play.disabled = true;
+      try {
+        const shown = await call("preview_mascot_line", { id: item.id, event: moment, index: next[moment] || 0 });
+        next[moment] = shown.index + 1;
+        count.textContent = `${shown.index + 1}/${shown.count}`;
+      } catch {
+      } finally {
+        play.disabled = false;
+      }
+    };
+    return el("div", { class: "preview-row" }, play, el("span", {}, label), count);
+  });
+  await openDialog({
+    title: t("Preview {name}", { name: t(item.name) }),
+    body: el(
+      "div",
+      { class: "line-fields" },
+      el(
+        "p",
+        { class: "muted small-text" },
+        "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.",
+      ),
+      item.shown ? null : el("p", { class: "small-text error-text" }, "Show this mascot first."),
+      el("div", { class: "preview-rows" }, ...rows),
+    ),
+    actions: [{ label: "Done", value: true }],
+  });
+}
+
 async function editVoices(item) {
   const body = el("div", { class: "line-fields" });
   const volume = voiceVolume(item);
+  const effect = spriteEffect(item);
 
   const render = async () => {
-    const voices = await call("mascot_voices", { id: item.id });
+    const [voices, sprites] = await Promise.all([
+      call("mascot_voices", { id: item.id }),
+      call("mascot_sprites", { id: item.id }),
+    ]);
     const muted = store.settings.mascot_muted_moments?.[item.id] || [];
     const rows = VOICE_MOMENTS.map(([moment, label]) => {
       const talks = el("input", { type: "checkbox", checked: !muted.includes(moment) });
@@ -773,6 +835,25 @@ async function editVoices(item) {
         }
       };
 
+      const pictures = (sprites?.[moment] || []).map((path) => {
+        const remove = el("button", { class: "sprite-remove", title: "Remove" }, "✕");
+        remove.onclick = async () => {
+          await call("remove_mascot_voice", { path });
+          render();
+        };
+        return el("div", { class: "sprite-thumb", title: fileName(path) }, el("img", { src: fileUrl(path), alt: "" }), remove);
+      });
+      const addPicture = el("button", { class: "btn secondary small" }, "Add a picture…");
+      addPicture.onclick = async () => {
+        const path = await pickFile({ title: "Choose a picture", filters: MASCOT_IMAGE_FILTERS });
+        if (path) {
+          const done = await call("add_mascot_sprite", { id: item.id, event: moment, path });
+          if (done !== undefined) {
+            render();
+          }
+        }
+      };
+
       const row = el(
         "div",
         { class: `voice-moment ${talks.checked ? "" : "off"}` },
@@ -780,11 +861,12 @@ async function editVoices(item) {
           "div",
           { class: "row" },
           el("label", { class: "voice-talks", title: "Untick so this mascot stays quiet here. The others talk instead." }, talks, el("b", {}, label)),
-          add,
+          el("div", { class: "row" }, add, addPicture),
         ),
         files.length
           ? el("div", { class: "voice-files" }, ...files)
           : el("span", { class: "small-text muted" }, "No sound: it only shows the text."),
+        pictures.length ? el("div", { class: "sprite-thumbs" }, ...pictures) : null,
       );
       return row;
     });
@@ -796,15 +878,21 @@ async function editVoices(item) {
           "with the lines in order: the 1st sound (by file name) with the 1st line, and so on. " +
           "Otherwise, one is picked at random.",
       ),
+      el(
+        "p",
+        { class: "muted small-text" },
+        "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.",
+      ),
       el("p", { class: "muted small-text" }, "Untick a moment to keep this mascot quiet then: the others talk instead."),
       volume,
+      effect,
       ...rows,
     );
   };
 
   await render();
   await openDialog({
-    title: t("{name}'s voice", { name: t(item.name) }),
+    title: t("{name}'s voice & pictures", { name: t(item.name) }),
     wide: true,
     body,
     actions: [{ label: "Done", value: true }],

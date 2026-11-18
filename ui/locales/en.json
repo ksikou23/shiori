@@ -1135,6 +1135,20 @@
     "No other open app": "No other open app",
     "Data": "Data",
     "Backup file": "Backup file",
-    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "The original and English titles come from VNDB. VNs without one keep the romanized title."
+    "{name}'s voice & pictures": "{name}'s voice & pictures",
+    "Voices & pictures…": "Voices & pictures…",
+    "Add a picture…": "Add a picture…",
+    "Choose a picture": "Choose a picture",
+    "Picture change": "Picture change",
+    "Dissolve": "Dissolve",
+    "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.": "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "The original and English titles come from VNDB. VNs without one keep the romanized title.",
+    "Preview…": "Preview…",
+    "Preview {name}": "Preview {name}",
+    "Play the next line": "Play the next line",
+    "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.": "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.",
+    "Show this mascot first.": "Show this mascot first.",
+    "The mascots are tucked away right now.": "The mascots are tucked away right now.",
+    "No line for this moment.": "No line for this moment."
   }
 }

@@ -6,7 +6,7 @@ use serde_json::{json, Map, Value};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::mascot::{self, AUDIO_EXTS, BUILT_IN, BUILT_IN_ID, IMAGE_EXTS, VOICE_EVENTS};
+use crate::mascot::{self, Media, BUILT_IN, BUILT_IN_ID, IMAGE_EXTS, VOICE_EVENTS};
 use crate::personalities;
 use crate::state::Shared;
 
@@ -95,11 +95,13 @@ fn write_pack(
 
     add(MANIFEST, serde_json::to_string_pretty(manifest).unwrap().as_bytes())?;
     add(image_name, image)?;
-    for (event, files) in mascot::voices(shared, id) {
-        for file in files.as_array().into_iter().flatten().filter_map(Value::as_str) {
-            let file = Path::new(file);
-            let name = file.file_name().unwrap_or_default().to_string_lossy();
-            add(&format!("voices/{event}/{name}"), &fs::read(file).map_err(|e| e.to_string())?)?;
+    for (folder, kind) in [("voices", Media::Voices), ("sprites", Media::Sprites)] {
+        for (event, files) in mascot::media(shared, id, kind) {
+            for file in files.as_array().into_iter().flatten().filter_map(Value::as_str) {
+                let file = Path::new(file);
+                let name = file.file_name().unwrap_or_default().to_string_lossy();
+                add(&format!("{folder}/{event}/{name}"), &fs::read(file).map_err(|e| e.to_string())?)?;
+            }
         }
     }
     zip.finish().map_err(|e| e.to_string())?;
@@ -188,35 +190,47 @@ fn import_into(
 }
 
 fn add_voices(shared: &Shared, id: &str, zip: &mut ZipArchive<File>, staging: &Path) -> Result<(), String> {
-    let wanted: Vec<(String, String, String)> = zip
-        .file_names()
-        .filter_map(|entry| voice_target(entry).map(|(event, file)| (entry.to_string(), event, file)))
-        .take(MAX_VOICES)
-        .collect();
-    for (entry, event, file) in wanted {
-        let bytes = read_limited(zip, &entry, MAX_VOICE)?;
-        let staged = staging.join(&file);
-        fs::write(&staged, bytes).map_err(|e| e.to_string())?;
-        let added = mascot::add_voice(shared, id, &event, &staged);
-        let _ = fs::remove_file(&staged);
-        added?;
+    for (kind, limit) in [(Media::Voices, MAX_VOICE), (Media::Sprites, MAX_IMAGE)] {
+        let wanted: Vec<(String, String, String)> = zip
+            .file_names()
+            .filter_map(|entry| media_target(entry, kind).map(|(event, file)| (entry.to_string(), event, file)))
+            .take(MAX_VOICES)
+            .collect();
+        for (entry, event, file) in wanted {
+            let bytes = read_limited(zip, &entry, limit)?;
+            let staged = staging.join(&file);
+            fs::write(&staged, bytes).map_err(|e| e.to_string())?;
+            let added = mascot::add_media(shared, id, kind, &event, &staged);
+            let _ = fs::remove_file(&staged);
+            added?;
+        }
     }
     Ok(())
 }
 
+#[cfg(test)]
 fn voice_target(entry: &str) -> Option<(String, String)> {
+    media_target(entry, Media::Voices)
+}
+
+fn media_target(entry: &str, kind: Media) -> Option<(String, String)> {
+    let folder = match kind {
+        Media::Voices => "voices",
+        Media::Sprites => "sprites",
+    };
     let mut parts = entry.split('/');
-    let (Some("voices"), Some(event), Some(file), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
+    let (Some(root), Some(event), Some(file), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
         return None;
     };
+    if root != folder {
+        return None;
+    }
     if !VOICE_EVENTS.contains(&event) {
         return None;
     }
     let (stem, ext) = file.rsplit_once('.')?;
     let ext = ext.to_lowercase();
-    if stem.is_empty() || !AUDIO_EXTS.contains(&ext.as_str()) {
+    if stem.is_empty() || !kind.exts().contains(&ext.as_str()) {
         return None;
     }
     Some((event.to_string(), format!("{}.{ext}", mascot::safe_id(stem))))
@@ -315,6 +329,9 @@ mod tests {
         assert_eq!(voice_target("voices/poke/a.exe"), None);
         assert_eq!(voice_target("voices/poke/.mp3"), None);
         assert_eq!(voice_target("image.png"), None);
+        assert_eq!(media_target("sprites/poke/Happy.PNG", Media::Sprites), Some(("poke".into(), "Happy.png".into())));
+        assert_eq!(media_target("sprites/poke/a.mp3", Media::Sprites), None);
+        assert_eq!(media_target("voices/poke/a.png", Media::Sprites), None);
     }
 
     #[test]

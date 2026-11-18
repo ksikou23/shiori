@@ -215,3 +215,58 @@ body.balloon-window.right {
   margin: 0;
   border-radius: 8px;
 }
+
+body.mascot-window #sprite {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+body.mascot-window.speaking #sprite {
+  opacity: 1;
+}
+
+body.mascot-window.speaking #character {
+  opacity: 0;
+}
+
+body.mascot-window.tucked #sprite,
+body.mascot-window.tucked #character {
+  opacity: 0;
+}
+
+body.mascot-window[data-effect="dissolve"] img {
+  transition: opacity 0.4s ease;
+}
+
+body.mascot-window[data-effect="bounce"] img,
+body.mascot-window[data-effect="pop"] img,
+body.mascot-window[data-effect="none"] img {
+  transition: opacity 0.06s linear;
+}
+
+body.mascot-window img.boing {
+  transform-origin: 50% 100%;
+  animation: mascot-boing 0.5s ease;
+}
+
+body.mascot-window img.pop {
+  transform-origin: 50% 100%;
+  animation: mascot-pop 0.35s ease;
+}
+
+@keyframes mascot-boing {
+  0% { transform: scale(1, 1); }
+  30% { transform: scale(0.97, 0.86); }
+  58% { transform: scale(0.98, 1); }
+  78% { transform: scale(0.99, 0.95); }
+  100% { transform: scale(1, 1); }
+}
+
+@keyframes mascot-pop {
+  0% { transform: scale(0.86); }
+  55% { transform: scale(1); }
+  78% { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}

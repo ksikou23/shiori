@@ -1135,6 +1135,20 @@
     "No other open app": "他に開いているアプリはありません",
     "Data": "データ",
     "Backup file": "バックアップファイル",
-    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "原題と英語タイトルはVNDBから取得します。ない場合はローマ字のタイトルのままです。"
+    "{name}'s voice & pictures": "{name}のボイスと画像",
+    "Voices & pictures…": "ボイスと画像…",
+    "Add a picture…": "画像を追加…",
+    "Choose a picture": "画像を選択",
+    "Picture change": "画像の切り替え",
+    "Dissolve": "ディゾルブ",
+    "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.": "画像も同じです。セリフが表示されている間その画像になり、終わるといつもの姿に戻ります。",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "原題と英語タイトルはVNDBから取得します。ない場合はローマ字のタイトルのままです。",
+    "Preview…": "プレビュー…",
+    "Preview {name}": "{name}のプレビュー",
+    "Play the next line": "次のセリフを再生",
+    "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.": "クリックするたびに次のセリフを吹き出し・画像・ボイス付きで表示します。1つずつ確認できます。",
+    "Show this mascot first.": "先にこのマスコットを表示してください。",
+    "The mascots are tucked away right now.": "マスコットは今しまわれています。",
+    "No line for this moment.": "この場面のセリフはありません。"
   }
 }

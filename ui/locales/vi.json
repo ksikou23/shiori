@@ -1135,6 +1135,20 @@
     "No other open app": "Không có ứng dụng nào khác đang mở",
     "Data": "Dữ liệu",
     "Backup file": "Tệp sao lưu",
-    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Tên gốc và tên tiếng Anh lấy từ VNDB. VN không có thì giữ tên phiên âm Latin."
+    "{name}'s voice & pictures": "Giọng nói và hình ảnh của {name}",
+    "Voices & pictures…": "Giọng nói và hình ảnh…",
+    "Add a picture…": "Thêm hình ảnh…",
+    "Choose a picture": "Chọn hình ảnh",
+    "Picture change": "Hiệu ứng đổi hình",
+    "Dissolve": "Mờ dần",
+    "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.": "Hình ảnh cũng vậy: linh vật hiện hình trong lúc câu thoại đang hiển thị, rồi trở lại như bình thường.",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Tên gốc và tên tiếng Anh lấy từ VNDB. VN không có thì giữ tên phiên âm Latin.",
+    "Preview…": "Xem trước…",
+    "Preview {name}": "Xem trước {name}",
+    "Play the next line": "Phát câu tiếp theo",
+    "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.": "Mỗi lần bấm sẽ hiện câu tiếp theo cùng bong bóng, hình ảnh và giọng nói để bạn kiểm tra từng câu.",
+    "Show this mascot first.": "Hãy hiện linh vật này trước.",
+    "The mascots are tucked away right now.": "Các linh vật đang được ẩn.",
+    "No line for this moment.": "Không có câu nào cho lúc này."
   }
 }

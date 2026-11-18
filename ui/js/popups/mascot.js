@@ -4,12 +4,47 @@ const DRAG_SLOP = 4;
 const DOUBLE_CLICK_MS = 280;
 
 const character = document.getElementById("character");
+const sprite = document.getElementById("sprite");
+const SPRING = { bounce: "boing", pop: "pop" };
 
 let pressedAt = null;
 let dragging = false;
 let clickTimer = null;
 
+let spriteTimer = null;
+
+function swap(speaking, effect) {
+  document.body.dataset.effect = effect;
+  document.body.classList.toggle("speaking", speaking);
+  const shown = speaking ? sprite : character;
+  const spring = SPRING[effect];
+  if (spring) {
+    shown.classList.remove("boing", "pop");
+    void shown.offsetWidth;
+    shown.classList.add(spring);
+  }
+}
+
+listenHere("sprite", (event) => {
+  const { file, seconds, effect } = event.payload;
+  const url = fileUrl(file);
+  const ready = new Image();
+  ready.onload = () => {
+    clearTimeout(spriteTimer);
+    sprite.src = url;
+    swap(true, effect);
+    spriteTimer = setTimeout(() => swap(false, effect), Math.max(1, Number(seconds) || 4) * 1000);
+  };
+  ready.src = url;
+});
+
+for (const image of [character, sprite]) {
+  image.addEventListener("animationend", () => image.classList.remove("boing", "pop"));
+}
+
 async function start() {
+  clearTimeout(spriteTimer);
+  document.body.classList.remove("speaking");
   const info = await invoke("mascot_info");
   if (info) {
     character.src = fileUrl(info.file);

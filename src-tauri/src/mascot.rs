@@ -580,9 +580,12 @@ pub fn remove_from_gallery(shared: &Shared, id: &str) -> Result<(), String> {
     if let Some(file) = file_for(shared, id) {
         std::fs::remove_file(file).map_err(|e| e.to_string())?;
     }
-    if let Some(dir) = voices_dir(shared, id) {
-        let _ = std::fs::remove_dir_all(dir);
+    for kind in [Media::Voices, Media::Sprites] {
+        if let Some(dir) = media_dir(shared, id, kind) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
+    set_setting_for(shared, SPRITE_EFFECTS, id, Value::Null);
     set_setting_for(shared, "mascot_balloons", id, Value::Null);
     set_setting_for(shared, "mascot_voice_volumes", id, Value::Null);
     set_setting_for(shared, SILENT, id, Value::Null);
@@ -1118,35 +1121,81 @@ fn say_at(
         _ => labels[random(labels.len())].clone(),
     };
 
+    let shared = shared(app);
+    let language = lang::resolve(&shared.config.lock().unwrap().str("language"));
+    let said = line(&lines_for(&shared, id_of(&label), language));
+    speak(app, &shared, &label, event, said, seconds, false);
+}
+
+fn speak(app: &AppHandle, shared: &Shared, label: &str, event: &str, said: Said, seconds: u64, force: bool) {
     LAST_SAID.store(now(), Ordering::SeqCst);
     crate::crash::note(format!("{label} says {event}"));
-    let shared = shared(app);
-    let (talks, language, volume) = {
+    let (talks, volume) = {
         let cfg = shared.config.lock().unwrap();
         (
-            cfg.get("mascot_talk").and_then(Value::as_bool).unwrap_or(true),
-            lang::resolve(&cfg.str("language")),
+            force || cfg.get("mascot_talk").and_then(Value::as_bool).unwrap_or(true),
             cfg.get("mascot_voice_volume").and_then(Value::as_u64).unwrap_or(80)
                 * cfg
                     .get("mascot_voice_volumes")
-                    .and_then(|v| v.get(id_of(&label)))
+                    .and_then(|v| v.get(id_of(label)))
                     .and_then(Value::as_u64)
                     .unwrap_or(100)
                     .min(100)
                 / 100,
         )
     };
-    let said = line(&lines_for(&shared, id_of(&label), language));
+    let draw = said.index.unwrap_or_else(|| random(1 << 16));
     if volume > 0 {
-        if let Some(file) = voice_for(&shared, id_of(&label), event, said.index) {
-            let _ = app.emit_to(label.as_str(), "voice", json!({ "file": file, "volume": volume }));
+        if let Some(file) = media_for(shared, id_of(label), Media::Voices, event, draw) {
+            let _ = app.emit_to(label, "voice", json!({ "file": file, "volume": volume }));
         }
+    }
+    if let Some(file) = media_for(shared, id_of(label), Media::Sprites, event, draw) {
+        let effect = sprite_effect(shared, id_of(label));
+        let _ = app.emit_to(label, "sprite", json!({ "file": file, "seconds": seconds, "effect": effect }));
     }
     if !talks {
         return;
     }
-    *SPEAKER.lock().unwrap() = Some(label.clone());
-    ui_windows::show_balloon(app, id_of(&label), &said.text, seconds as f64);
+    *SPEAKER.lock().unwrap() = Some(label.to_string());
+    ui_windows::show_balloon(app, id_of(label), &said.text, seconds as f64);
+}
+
+fn moment_lines<'a>(lines: &'a Lines, event: &str) -> Option<&'a Vec<String>> {
+    Some(match event {
+        "start" => &lines.start,
+        "stop" => &lines.stop,
+        "idle" => &lines.idle,
+        "back" => &lines.back,
+        "section" => &lines.section,
+        "screenshot" => &lines.screenshot,
+        "poke" => &lines.pokes,
+        "chatter" => &lines.chatter,
+        _ => return None,
+    })
+}
+
+pub fn preview(app: &AppHandle, id: &str, event: &str, index: usize) -> Result<Value, String> {
+    let label = format!("{WINDOW_PREFIX}{id}");
+    if !with_characters(|characters| characters.contains_key(&label)) {
+        return Err("Show this mascot first.".into());
+    }
+    if tucked() {
+        return Err("The mascots are tucked away right now.".into());
+    }
+    let shared = shared(app);
+    let language = lang::resolve(&shared.config.lock().unwrap().str("language"));
+    let lines = lines_for(&shared, id, language);
+    let list = moment_lines(&lines, event).ok_or("Unknown moment.")?;
+    if list.is_empty() {
+        return Err("No line for this moment.".into());
+    }
+    let index = index % list.len();
+    let name = reading_now(app).map_or_else(|| "Visual Novel".to_string(), |reading| reading.name);
+    let text = list[index].replace("{name}", &name).replace("{section}", "1");
+    let said = Said { text, index: (list.len() > 1).then_some(index) };
+    speak(app, &shared, &label, event, said, 6, true);
+    Ok(json!({ "index": index, "count": list.len() }))
 }
 
 struct Said {
@@ -1356,11 +1405,52 @@ pub fn toggle_view_only(app: &AppHandle, key: &str) {
     let _ = app.emit("settings-changed", settings);
 }
 
-fn voices_dir(shared: &Shared, id: &str) -> Option<PathBuf> {
-    valid_id(id).then(|| gallery_dir(shared).join("voices").join(id))
+#[derive(Clone, Copy, PartialEq)]
+pub enum Media {
+    Voices,
+    Sprites,
 }
 
-fn audio_files(dir: &Path) -> Vec<PathBuf> {
+impl Media {
+    fn folder(self) -> &'static str {
+        match self {
+            Media::Voices => "voices",
+            Media::Sprites => "sprites",
+        }
+    }
+
+    pub fn exts(self) -> &'static [&'static str] {
+        match self {
+            Media::Voices => &AUDIO_EXTS,
+            Media::Sprites => &IMAGE_EXTS,
+        }
+    }
+
+    fn wrong_file(self) -> &'static str {
+        match self {
+            Media::Voices => "Use an MP3, WAV, OGG, M4A, OPUS or FLAC file.",
+            Media::Sprites => "Use a PNG, WEBP or GIF picture.",
+        }
+    }
+}
+
+pub const SPRITE_EFFECTS: &str = "mascot_sprite_effects";
+pub const SPRITE_EFFECT_NAMES: [&str; 4] = ["dissolve", "bounce", "pop", "none"];
+
+fn sprite_effect(shared: &Shared, id: &str) -> String {
+    let chosen = setting_for(shared, SPRITE_EFFECTS, id);
+    chosen
+        .as_str()
+        .filter(|name| SPRITE_EFFECT_NAMES.contains(name))
+        .unwrap_or(SPRITE_EFFECT_NAMES[0])
+        .to_string()
+}
+
+fn media_dir(shared: &Shared, id: &str, kind: Media) -> Option<PathBuf> {
+    valid_id(id).then(|| gallery_dir(shared).join(kind.folder()).join(id))
+}
+
+fn media_files(dir: &Path, kind: Media) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -1369,7 +1459,7 @@ fn audio_files(dir: &Path) -> Vec<PathBuf> {
         .filter(|path| {
             path.extension()
                 .map(|e| e.to_string_lossy().to_lowercase())
-                .is_some_and(|ext| AUDIO_EXTS.contains(&ext.as_str()))
+                .is_some_and(|ext| kind.exts().contains(&ext.as_str()))
         })
         .collect();
     files.sort_by_key(|path| natural_key(&path.file_name().unwrap_or_default().to_string_lossy()));
@@ -1393,21 +1483,20 @@ fn natural_key(name: &str) -> String {
     key
 }
 
-fn voice_for(shared: &Shared, id: &str, event: &str, index: Option<usize>) -> Option<String> {
-    let files = audio_files(&voices_dir(shared, id)?.join(event));
+fn media_for(shared: &Shared, id: &str, kind: Media, event: &str, draw: usize) -> Option<String> {
+    let files = media_files(&media_dir(shared, id, kind)?.join(event), kind);
     if files.is_empty() {
         return None;
     }
-    let n = index.unwrap_or_else(|| random(files.len())) % files.len();
-    Some(files[n].to_string_lossy().to_string())
+    Some(files[draw % files.len()].to_string_lossy().to_string())
 }
 
-pub fn voices(shared: &Shared, id: &str) -> Map<String, Value> {
+pub fn media(shared: &Shared, id: &str, kind: Media) -> Map<String, Value> {
     VOICE_EVENTS
         .iter()
         .map(|event| {
-            let files: Vec<String> = voices_dir(shared, id)
-                .map(|dir| audio_files(&dir.join(event)))
+            let files: Vec<String> = media_dir(shared, id, kind)
+                .map(|dir| media_files(&dir.join(event), kind))
                 .unwrap_or_default()
                 .iter()
                 .map(|f| f.to_string_lossy().to_string())
@@ -1417,16 +1506,19 @@ pub fn voices(shared: &Shared, id: &str) -> Map<String, Value> {
         .collect()
 }
 
-pub fn add_voice(shared: &Shared, id: &str, event: &str, source: &Path) -> Result<(), String> {
+pub fn add_media(shared: &Shared, id: &str, kind: Media, event: &str, source: &Path) -> Result<(), String> {
     if !VOICE_EVENTS.contains(&event) {
         return Err("Unknown moment.".into());
     }
     let ext = source
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
-        .filter(|ext| AUDIO_EXTS.contains(&ext.as_str()))
-        .ok_or("Use an MP3, WAV, OGG, M4A, OPUS or FLAC file.")?;
-    let dir = voices_dir(shared, id).ok_or("Unknown mascot.")?.join(event);
+        .filter(|ext| kind.exts().contains(&ext.as_str()))
+        .ok_or(kind.wrong_file())?;
+    if kind == Media::Sprites {
+        image::open(source).map_err(|_| "That picture can't be opened.".to_string())?;
+    }
+    let dir = media_dir(shared, id, kind).ok_or("Unknown mascot.")?.join(event);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let stem = safe_id(&source.file_stem().unwrap_or_default().to_string_lossy());
@@ -1439,13 +1531,13 @@ pub fn add_voice(shared: &Shared, id: &str, event: &str, source: &Path) -> Resul
     Ok(())
 }
 
-pub fn remove_voice(shared: &Shared, file: &Path) -> Result<(), String> {
-    let root = gallery_dir(shared).join("voices");
+pub fn remove_media(shared: &Shared, file: &Path) -> Result<(), String> {
+    let roots = [Media::Voices, Media::Sprites].map(|kind| gallery_dir(shared).join(kind.folder()));
     let sneaky = file
         .components()
         .any(|part| matches!(part, std::path::Component::ParentDir | std::path::Component::CurDir));
-    if sneaky || !file.starts_with(&root) {
-        return Err("That file isn't a mascot voice.".into());
+    if sneaky || !roots.iter().any(|root| file.starts_with(root)) {
+        return Err("That file isn't a mascot voice or picture.".into());
     }
     std::fs::remove_file(file).map_err(|e| e.to_string())
 }

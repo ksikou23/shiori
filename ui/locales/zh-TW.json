@@ -1135,6 +1135,20 @@
     "No other open app": "沒有其他已開啟的應用程式",
     "Data": "資料",
     "Backup file": "備份檔案",
-    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "原名和英文名來自 VNDB。沒有的 VN 會保留羅馬字標題。"
+    "{name}'s voice & pictures": "{name}的語音和圖片",
+    "Voices & pictures…": "語音和圖片…",
+    "Add a picture…": "新增圖片…",
+    "Choose a picture": "選擇圖片",
+    "Picture change": "圖片切換",
+    "Dissolve": "溶解",
+    "Pictures work the same way: the mascot shows the picture while the line is on screen, then goes back to its usual look.": "圖片也一樣：台詞顯示時吉祥物會換成這張圖片，之後恢復原樣。",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "原名和英文名來自 VNDB。沒有的 VN 會保留羅馬字標題。",
+    "Preview…": "預覽…",
+    "Preview {name}": "預覽{name}",
+    "Play the next line": "播放下一句",
+    "Each click shows the next line with its bubble, picture and voice, so you can check them one by one.": "每次點擊都會顯示下一句及其氣泡、圖片和語音，方便逐一檢查。",
+    "Show this mascot first.": "請先顯示這個吉祥物。",
+    "The mascots are tucked away right now.": "吉祥物現在已收起。",
+    "No line for this moment.": "這個時刻沒有台詞。"
   }
 }

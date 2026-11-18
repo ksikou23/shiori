@@ -24,6 +24,11 @@ pub fn mascot_poke(app: AppHandle, window: WebviewWindow) {
 }
 
 #[tauri::command(async)]
+pub fn preview_mascot_line(app: AppHandle, id: String, event: String, index: usize) -> Result<serde_json::Value, String> {
+    mascot::preview(&app, &id, &event, index)
+}
+
+#[tauri::command(async)]
 pub fn mascot_open_app(app: AppHandle) {
     ui_windows::show_main(&app);
 }
@@ -161,17 +166,36 @@ pub fn set_mascot_view_only(shared: SharedState, id: String, view_only: bool) {
 
 #[tauri::command(async)]
 pub fn mascot_voices(shared: SharedState, id: String) -> serde_json::Map<String, serde_json::Value> {
-    mascot::voices(&shared, &id)
+    mascot::media(&shared, &id, mascot::Media::Voices)
 }
 
 #[tauri::command(async)]
 pub fn add_mascot_voice(shared: SharedState, id: String, event: String, path: String) -> Result<(), String> {
-    mascot::add_voice(&shared, &id, &event, Path::new(&path))
+    mascot::add_media(&shared, &id, mascot::Media::Voices, &event, Path::new(&path))
 }
 
 #[tauri::command(async)]
 pub fn remove_mascot_voice(shared: SharedState, path: String) -> Result<(), String> {
-    mascot::remove_voice(&shared, Path::new(&path))
+    mascot::remove_media(&shared, Path::new(&path))
+}
+
+#[tauri::command(async)]
+pub fn mascot_sprites(shared: SharedState, id: String) -> serde_json::Map<String, serde_json::Value> {
+    mascot::media(&shared, &id, mascot::Media::Sprites)
+}
+
+#[tauri::command(async)]
+pub fn add_mascot_sprite(shared: SharedState, id: String, event: String, path: String) -> Result<(), String> {
+    mascot::add_media(&shared, &id, mascot::Media::Sprites, &event, Path::new(&path))
+}
+
+#[tauri::command(async)]
+pub fn set_mascot_sprite_effect(shared: SharedState, id: String, effect: String) -> Result<(), String> {
+    if !mascot::SPRITE_EFFECT_NAMES.contains(&effect.as_str()) {
+        return Err("Unknown effect.".into());
+    }
+    mascot::set_setting_for(&shared, mascot::SPRITE_EFFECTS, &id, serde_json::json!(effect));
+    Ok(())
 }
 
 #[tauri::command]
