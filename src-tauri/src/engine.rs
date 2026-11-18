@@ -929,7 +929,6 @@ fn reading_progress(playtime_seconds: i64, length_minutes: i64) -> Option<i64> {
     if length_minutes <= 0 {
         return None;
     }
-
     Some(playtime_seconds / 60 * 100 / length_minutes).filter(|percent| *percent < 100)
 }
 

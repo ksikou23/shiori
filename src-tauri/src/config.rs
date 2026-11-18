@@ -969,7 +969,6 @@ mod tests {
         ] {
             fs::write(file, "x").unwrap();
         }
-
         add(
             &mut cfg,
             "a",
