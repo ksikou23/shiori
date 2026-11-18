@@ -237,10 +237,12 @@ pub fn apply(activity: &mut Activity, custom: &Value, vars: &Vars, session_start
 
     activity.small_image = match field(custom, "small_icon") {
         url if url.starts_with("https://") || url.starts_with("http://") => url.to_string(),
-        _ => APP_ICON.to_string(),
+        "app" => APP_ICON.to_string(),
+        _ => String::new(),
     };
     activity.small_text = match field(custom, "small_icon") {
-        "" => "Shiori".to_string(),
+        "" => String::new(),
+        "app" if field(custom, "small_text").is_empty() => "Shiori".to_string(),
         _ => fill(field(custom, "small_text"), vars),
     };
 
