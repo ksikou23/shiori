@@ -1134,6 +1134,7 @@
     "Pick an open app…": "開いているアプリを選ぶ…",
     "No other open app": "他に開いているアプリはありません",
     "Data": "データ",
-    "Backup file": "バックアップファイル"
+    "Backup file": "バックアップファイル",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "原題と英語タイトルはVNDBから取得します。ない場合はローマ字のタイトルのままです。"
   }
 }

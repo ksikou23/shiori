@@ -274,7 +274,7 @@ fn preview(shared: &Shared, custom: &Value) -> Value {
         let cfg = shared.config.lock().unwrap();
         let language = presence::language(&cfg);
         match &snap {
-            Some(snap) => presence::vars(snap, &cfg.game(&snap.key), cfg.str("title_language") == "original", language),
+            Some(snap) => presence::vars(snap, &cfg.game(&snap.key), &cfg.str("title_language"), language),
             None => presence::sample_vars(language),
         }
     };

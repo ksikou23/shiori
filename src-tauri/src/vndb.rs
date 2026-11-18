@@ -11,7 +11,7 @@ const API: &str = "https://api.vndb.org/kana";
 const USER_AGENT: &str = concat!("ShioriRPC/", env!("CARGO_PKG_VERSION"));
 const MIN_INTERVAL: Duration = Duration::from_millis(500);
 const FIELDS: &str =
-    "id,title,alttitle,titles.title,titles.latin,aliases,released,rating,length_minutes,image.url,image.dims,image.sexual,image.violence";
+    "id,title,alttitle,titles.title,titles.latin,titles.lang,titles.official,aliases,released,rating,length_minutes,image.url,image.dims,image.sexual,image.violence";
 
 pub const LIST_LABELS: [(&str, i64); 4] = [
     ("playing", 1),
@@ -33,6 +33,7 @@ pub struct VnResult {
     pub rating: f64,
     pub length_minutes: i64,
     pub other_titles: Vec<String>,
+    pub english_title: String,
 }
 
 pub(crate) fn is_nsfw(image: &Value) -> bool {
@@ -62,6 +63,16 @@ fn other_titles(o: &Value) -> Vec<String> {
     out
 }
 
+fn english_title(o: &Value) -> String {
+    o["titles"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|t| t["lang"] == "en" && t["official"] == true)
+        .map(|t| text(&t["title"]).trim().to_string())
+        .unwrap_or_default()
+}
+
 impl VnResult {
     fn from_api(o: &Value) -> VnResult {
         let released = text(&o["released"]);
@@ -76,6 +87,7 @@ impl VnResult {
             rating: o["rating"].as_f64().unwrap_or(0.0),
             length_minutes: o["length_minutes"].as_i64().unwrap_or(0),
             other_titles: other_titles(o),
+            english_title: english_title(o),
         }
     }
 
@@ -273,7 +285,10 @@ pub(crate) fn read_cached(path: &Path, days: u64) -> Option<Value> {
 }
 
 fn has_length(raw: &Value) -> bool {
-    raw.get("length_minutes").is_some() && raw.get("titles").is_some()
+    raw.get("length_minutes").is_some()
+        && raw["titles"]
+            .as_array()
+            .is_some_and(|titles| titles.first().is_none_or(|title| title.get("lang").is_some()))
 }
 
 fn vn_id(id: &str) -> String {
@@ -833,6 +848,19 @@ mod tests {
         let results = vec![vn("v1", "Eternum", 9.0), vn("v2", "D.S. -Dal Segno-", 7.0)];
         assert!(best_match(results.clone(), "Some Unknown Game").is_none());
         assert_eq!(best_match(results, "Eternum").map(|v| v.id), Some("v1".into()));
+    }
+
+    #[test]
+    fn english_title_is_the_official_english_one() {
+        let vn = json!({"titles": [
+            {"lang": "ja", "title": "抜きゲーみたいな島", "official": true},
+            {"lang": "en", "title": "Fan TL", "official": false},
+            {"lang": "en", "title": "NUKITASHI", "official": true}
+        ]});
+        assert_eq!(english_title(&vn), "NUKITASHI");
+        assert_eq!(english_title(&json!({"titles": [{"lang": "ja", "title": "x", "official": true}]})), "");
+        assert!(!has_length(&json!({"length_minutes": 1, "titles": [{"title": "x"}]})));
+        assert!(has_length(&json!({"length_minutes": 1, "titles": [{"title": "x", "lang": "ja"}]})));
     }
 
     #[test]

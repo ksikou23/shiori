@@ -1134,6 +1134,7 @@
     "Pick an open app…": "Chọn một ứng dụng đang mở…",
     "No other open app": "Không có ứng dụng nào khác đang mở",
     "Data": "Dữ liệu",
-    "Backup file": "Tệp sao lưu"
+    "Backup file": "Tệp sao lưu",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Tên gốc và tên tiếng Anh lấy từ VNDB. VN không có thì giữ tên phiên âm Latin."
   }
 }

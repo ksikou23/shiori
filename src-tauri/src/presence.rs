@@ -78,18 +78,27 @@ pub fn original_title(snap: &Snapshot, entry: &Map<String, Value>) -> String {
         .unwrap_or_default()
 }
 
-pub fn vars(snap: &Snapshot, entry: &Map<String, Value>, original_first: bool, language: &str) -> Vars {
+pub fn english_title(snap: &Snapshot) -> String {
+    snap.vn.as_ref().map(|vn| vn.english_title.trim().to_string()).unwrap_or_default()
+}
+
+pub fn preferred_title(snap: &Snapshot, entry: &Map<String, Value>, title_language: &str) -> String {
+    match title_language {
+        "original" => original_title(snap, entry),
+        "english" => english_title(snap),
+        _ => String::new(),
+    }
+}
+
+pub fn vars(snap: &Snapshot, entry: &Map<String, Value>, title_language: &str, language: &str) -> Vars {
     let romanized = [&snap.game_name, &snap.raw_title]
         .into_iter()
         .find(|n| !n.is_empty())
         .cloned()
         .unwrap_or_else(|| "Visual Novel".into());
     let original = original_title(snap, entry);
-    let title = if original_first && !original.is_empty() {
-        original.clone()
-    } else {
-        romanized.clone()
-    };
+    let preferred = preferred_title(snap, entry, title_language);
+    let title = if preferred.is_empty() { romanized.clone() } else { preferred };
     let length = snap.vn.as_ref().map_or(0, |vn| vn.length_minutes);
     let progress = (length > 0)
         .then(|| snap.playtime_seconds / 60 * 100 / length)
@@ -286,10 +295,10 @@ mod tests {
             ("vndb_release_alttitle".into(), Value::from("Release original")),
         ]);
         assert_eq!(original_title(&snap, &entry), "Release original");
-        assert_eq!(vars(&snap, &entry, true, "en")[0].1, "Release original");
+        assert_eq!(vars(&snap, &entry, "original", "en")[0].1, "Release original");
         entry.insert("vndb_release_alttitle".into(), Value::from(""));
         assert_eq!(original_title(&snap, &entry), "");
-        assert_eq!(vars(&snap, &entry, true, "en")[0].1, "Release");
+        assert_eq!(vars(&snap, &entry, "original", "en")[0].1, "Release");
         entry.insert("vndb_release_id".into(), Value::from(""));
         assert_eq!(original_title(&snap, &entry), "VN original");
     }

@@ -258,6 +258,7 @@ function titleLanguageField() {
     {},
     el("option", { value: "romanized" }, t("Romanized")),
     el("option", { value: "original" }, t("Original")),
+    el("option", { value: "english" }, t("English")),
   );
   select.value = store.settings.title_language || "romanized";
   select.onchange = () => save({ title_language: select.value });
@@ -279,7 +280,7 @@ function presenceSection(custom) {
     ...(custom ? [hint("Your own layout is on: it replaces the lines set below.")] : []),
     presenceLanguageField(),
     titleLanguageField(),
-    hint("The original title comes from VNDB. VNs without one keep the romanized title."),
+    hint("The original and English titles come from VNDB. VNs without one keep the romanized title."),
     el(
       "div",
       { class: custom ? "locked" : "", title: custom ? "Set by your own layout" : "" },

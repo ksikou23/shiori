@@ -785,8 +785,8 @@ impl Engine {
             .cloned()
             .unwrap_or_else(|| "Visual Novel".into());
         let entry = cfg.game(&snap.key);
-        let original = Some(presence::original_title(snap, &entry))
-            .filter(|title| !title.is_empty() && cfg.str("title_language") == "original");
+        let original = Some(presence::preferred_title(snap, &entry, &cfg.str("title_language")))
+            .filter(|title| !title.is_empty());
         // The other title shows when hovering the cover.
         let (name, hover) = match original {
             Some(original) => (original, romanized),
@@ -813,7 +813,7 @@ impl Engine {
             let vars = presence::vars(
                 snap,
                 &entry,
-                cfg.str("title_language") == "original",
+                &cfg.str("title_language"),
                 language,
             );
             presence::apply(

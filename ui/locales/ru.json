@@ -1134,6 +1134,7 @@
     "Pick an open app…": "Выбрать открытое приложение…",
     "No other open app": "Других открытых приложений нет",
     "Data": "Данные",
-    "Backup file": "Файл резервной копии"
+    "Backup file": "Файл резервной копии",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Оригинальное и английское названия берутся из VNDB. Если их нет, остаётся название латиницей."
   }
 }

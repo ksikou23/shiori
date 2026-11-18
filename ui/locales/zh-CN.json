@@ -1134,6 +1134,7 @@
     "Pick an open app…": "选择一个已打开的应用…",
     "No other open app": "没有其他已打开的应用",
     "Data": "数据",
-    "Backup file": "备份文件"
+    "Backup file": "备份文件",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "原名和英文名来自 VNDB。没有的 VN 会保留罗马字标题。"
   }
 }

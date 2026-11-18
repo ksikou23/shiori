@@ -1134,6 +1134,7 @@
     "Pick an open app…": "Choisir une app ouverte…",
     "No other open app": "Aucune autre app ouverte",
     "Data": "Données",
-    "Backup file": "Fichier de sauvegarde"
+    "Backup file": "Fichier de sauvegarde",
+    "The original and English titles come from VNDB. VNs without one keep the romanized title.": "Le titre original et le titre anglais viennent de VNDB. Les VN qui n'en ont pas gardent le titre romanisé."
   }
 }
