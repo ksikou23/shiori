@@ -20,7 +20,7 @@ const TEMPLATE = `
     </div>
   </div>
 
-  <div class="share-preview"><canvas data-id="canvas"></canvas></div>
+  <div class="share-preview"><canvas class="loading" data-id="canvas" width="1280" height="720"></canvas></div>
 
   <div class="row">
     <button class="btn" data-id="copy">Copy image</button>
@@ -37,6 +37,9 @@ let root;
 let periodKind = "this_week";
 let drawing = 0;
 const coverImages = new Map();
+const readyCovers = new Map();
+const knownNsfw = new Map();
+const lastGames = new Map();
 let iconImage = null;
 
 const part = (id) => $(`[data-id="${id}"]`, root);
@@ -78,6 +81,7 @@ async function learnNsfw(vns) {
     for (const vn of vns) {
       if (vn.key in learned) {
         vn.nsfw = learned[vn.key];
+        knownNsfw.set(vn.key, vn.nsfw);
       }
     }
   } catch {}
@@ -90,7 +94,9 @@ function coverImage(path) {
       .then((url) => loadImage(url))
       .catch(() => null)
       .then((image) => {
-        if (!image) {
+        if (image) {
+          readyCovers.set(path, image);
+        } else {
           coverImages.delete(path);
         }
         return image;
@@ -107,31 +113,54 @@ async function draw() {
   }
   part("copy").disabled = true;
 
-  const games = await call("share_games");
-  const data = collect(games, periodKind);
-  const shown = data.vns.slice(0, MAX_COVERS);
   const allowNsfw = !!store.settings.allow_nsfw_covers;
-
-  const covers = new Map();
   iconImage ??= loadImage("assets/app_icon.png");
-  const [icon] = await Promise.all([
-    iconImage,
+  const kind = periodKind;
+  const paint = (games, icon) => {
+    const data = collect(games, kind);
+    const shown = data.vns.slice(0, MAX_COVERS);
+    for (const vn of shown) {
+      if (vn.nsfw === null && knownNsfw.has(vn.key)) {
+        vn.nsfw = knownNsfw.get(vn.key);
+      }
+    }
+    const covers = new Map();
+    for (const vn of shown) {
+      const image = vn.cover && readyCovers.get(vn.cover);
+      if (image && (allowNsfw || vn.nsfw !== null)) {
+        covers.set(vn.key, image);
+      }
+    }
+    const palette = resolveTheme(store.settings.theme || "system", store.settings.custom_theme);
+    render(part("canvas"), data, { palette, covers, icon, allowNsfw });
+    return shown;
+  };
+
+  const icon = await iconImage;
+  if (job !== drawing) {
+    return;
+  }
+  if (lastGames.has(kind)) {
+    paint(lastGames.get(kind), icon);
+    part("canvas").classList.remove("loading");
+  }
+
+  const games = await call("share_games");
+  if (job !== drawing) {
+    return;
+  }
+  lastGames.set(kind, games);
+  const shown = paint(games, icon);
+
+  await Promise.all([
     allowNsfw ? null : learnNsfw(shown),
-    ...shown
-      .filter((vn) => vn.cover)
-      .map(async (vn) => {
-        const image = await coverImage(vn.cover);
-        if (image) {
-          covers.set(vn.key, image);
-        }
-      }),
+    ...shown.filter((vn) => vn.cover).map((vn) => coverImage(vn.cover)),
   ]);
   if (job !== drawing) {
     return;
   }
-
-  const palette = resolveTheme(store.settings.theme || "system", store.settings.custom_theme);
-  render(part("canvas"), data, { palette, covers, icon, allowNsfw });
+  paint(games, icon);
+  part("canvas").classList.remove("loading");
   part("copy").disabled = false;
 }
 

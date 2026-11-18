@@ -17,8 +17,26 @@ const ICONS = {
 };
 const FRESH = 60000;
 
-let cached = null;
+const SAVED_STATUS = "shiori.community.status";
+const SAVED_STATS = "shiori.community.stats";
+
+const remembered = (key) => {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "null");
+  } catch {
+    return null;
+  }
+};
+const remember = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+};
+
+let cached = remembered(SAVED_STATUS);
 let checkedAt = 0;
+let lastStats = remembered(SAVED_STATS);
+let pending = null;
 const loadedImages = new Set();
 
 const open = (url) => call("open_url", { url });
@@ -39,11 +57,46 @@ async function libraryStats() {
   const games = await invoke("get_library").catch(() => []);
   const seconds = games.reduce((sum, game) => sum + (game.playtime || 0), 0);
   const read = games.filter((game) => (game.playtime || 0) >= 60 || game.status);
-  return {
+  lastStats = {
     hours: Math.round(seconds / 3600),
     vns: read.length,
     finished: games.filter((game) => game.status === "finished").length,
   };
+  remember(SAVED_STATS, lastStats);
+  return lastStats;
+}
+
+function imagesOf(status) {
+  return [status?.profile?.avatar || status?.avatar_url, status?.profile?.banner].filter(Boolean);
+}
+
+function preload(status) {
+  for (const url of imagesOf(status)) {
+    if (!loadedImages.has(url)) {
+      const probe = new Image();
+      probe.onload = () => loadedImages.add(url);
+      probe.src = url;
+    }
+  }
+}
+
+function fetchStatus() {
+  pending ??= invoke("cloud_status")
+    .then((status) => {
+      cached = status;
+      checkedAt = Date.now();
+      remember(SAVED_STATUS, status);
+      preload(status);
+      return status;
+    })
+    .finally(() => (pending = null));
+  return pending;
+}
+
+export function warmCommunity() {
+  preload(cached);
+  fetchStatus().catch(() => {});
+  libraryStats().catch(() => {});
 }
 
 function statTile(label, value) {
@@ -94,10 +147,12 @@ async function copy(url) {
 
 export function communityTab() {
   const card = el("div", { class: "cp" });
-  const stats = el("div", { class: "cp-stats" }, statTile(t("Time read"), null), statTile("VNs", null), statTile(t("Finished"), null));
-  libraryStats().then((value) => {
-    stats.replaceChildren(statTile(t("Time read"), `${value.hours}h`), statTile("VNs", String(value.vns)), statTile(t("Finished"), String(value.finished)));
-  });
+  const tiles = (value) =>
+    value
+      ? [statTile(t("Time read"), `${value.hours}h`), statTile("VNs", String(value.vns)), statTile(t("Finished"), String(value.finished))]
+      : [statTile(t("Time read"), null), statTile("VNs", null), statTile(t("Finished"), null)];
+  const stats = el("div", { class: "cp-stats" }, ...tiles(lastStats));
+  libraryStats().then((value) => stats.replaceChildren(...tiles(value)));
 
   const banner = (image = null) => {
     const layer = image ? el("div", { class: "cp-banner-img" }) : null;
@@ -218,7 +273,7 @@ export function communityTab() {
             try {
               await invoke("cloud_profile", { public: on });
               store.settings.profile_public = on;
-              cached = await invoke("cloud_status");
+              await fetchStatus();
               checkedAt = Date.now();
               signedIn(cached);
               toast(on ? "Your profile is public" : "Your profile is private");
@@ -238,10 +293,9 @@ export function communityTab() {
 
   async function refresh() {
     try {
-      const status = await invoke("cloud_status");
-      const changed = JSON.stringify(status) !== JSON.stringify(cached);
-      cached = status;
-      checkedAt = Date.now();
+      const before = JSON.stringify(cached);
+      const status = await fetchStatus();
+      const changed = JSON.stringify(status) !== before;
       if (changed || card.classList.contains("loading") || card.querySelector(".hint-text")) {
         draw(status);
       }
@@ -256,12 +310,14 @@ export function communityTab() {
     shell(el("div", { class: "hint-text cp-wait" }, "Finish signing in in your browser, then come back here."));
     try {
       cached = await invoke("cloud_login");
+      remember(SAVED_STATUS, cached);
       checkedAt = Date.now();
       draw(cached);
       toast("Signed in");
     } catch (error) {
       toast(typeof error === "string" ? error : "Couldn't sign in", { error: true });
       cached = null;
+      remember(SAVED_STATUS, null);
       refresh();
     }
   }
