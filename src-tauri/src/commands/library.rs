@@ -82,9 +82,9 @@ fn vn_date_pending(entry: &Entry, vn_id: &str) -> bool {
         && text(entry, "released_vn") != vn_id
 }
 
-fn selected_release_date_update(entry: &Entry, release_id: &str, date: &str) -> Option<Entry> {
+fn selected_release_date_update(entry: &Entry, release_id: &str, date: Option<&str>) -> Option<Entry> {
     (text(entry, "vndb_release_id") == release_id && release_date_pending(entry))
-        .then(|| Map::from_iter([("vndb_release_released".into(), json!(date))]))
+        .then(|| Map::from_iter([("vndb_release_released".into(), json!(date.unwrap_or("")))]))
 }
 
 #[tauri::command(async)]
@@ -178,7 +178,7 @@ pub async fn fill_release_dates(shared: SharedState<'_>) -> Result<usize, String
             }
             for (key, release_id) in &missing_releases {
                 let Some(entry) = cfg.all_games().get(key) else { continue };
-                let Some(date) = release_dates.get(release_id) else { continue };
+                let date = release_dates.get(release_id).map(String::as_str);
                 if let Some(fields) = selected_release_date_update(entry, release_id, date) {
                     cfg.set_game(key, fields);
                     updated += 1;
@@ -568,11 +568,26 @@ mod release_date_tests {
     fn old_selection_is_fetched_once_and_stale_results_are_rejected() {
         let mut entry = Map::from_iter([("vndb_release_id".into(), json!("r1"))]);
         assert!(release_date_pending(&entry));
-        assert!(selected_release_date_update(&entry, "r2", "2020-01-01").is_none());
-        entry.extend(selected_release_date_update(&entry, "r1", "tba").unwrap());
+        assert!(selected_release_date_update(&entry, "r2", Some("2020-01-01")).is_none());
+        entry.extend(selected_release_date_update(&entry, "r1", Some("tba")).unwrap());
         assert!(!release_date_pending(&entry));
-        assert!(selected_release_date_update(&entry, "r1", "2020-01-01").is_none());
+        assert!(selected_release_date_update(&entry, "r1", Some("2020-01-01")).is_none());
         entry.insert("vndb_release_id".into(), json!(""));
         assert!(!release_date_pending(&entry));
+    }
+
+    #[test]
+    fn missing_release_uses_vn_date_without_retrying() {
+        let mut entry = Map::from_iter([
+            ("vndb_release_id".into(), json!("r1")),
+            ("released".into(), json!("2010-01-01")),
+            ("released_vn".into(), json!("v1")),
+        ]);
+        assert!(release_date_pending(&entry));
+        assert!(selected_release_date_update(&entry, "r2", None).is_none());
+        entry.extend(selected_release_date_update(&entry, "r1", None).unwrap());
+        assert_eq!(entry["vndb_release_released"], "");
+        assert!(!release_date_pending(&entry));
+        assert_eq!(library_release_date(&entry, "v1"), "2010-01-01");
     }
 }

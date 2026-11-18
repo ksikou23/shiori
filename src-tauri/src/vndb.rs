@@ -212,6 +212,37 @@ fn collect_releases(
     }
 }
 
+fn collect_selected_release_dates(
+    ids: &[String],
+    mut fetch: impl FnMut(&Value) -> Result<Value, String>,
+) -> Result<HashMap<String, String>, String> {
+    let mut dates = HashMap::new();
+    for chunk in ids.chunks(100) {
+        let mut filters = vec![json!("or")];
+        filters.extend(chunk.iter().map(|id| json!(["id", "=", id])));
+        let filters = if chunk.len() == 1 {
+            filters[1].clone()
+        } else {
+            Value::Array(filters)
+        };
+        let body = json!({"filters": filters, "fields": "released", "results": 100});
+        let data = fetch(&body)?;
+        let results = data["results"]
+            .as_array()
+            .ok_or_else(|| "Couldn't read release dates from VNDB.".to_string())?;
+        for release in results {
+            let id = release["id"]
+                .as_str()
+                .ok_or_else(|| "VNDB returned a release without an ID.".to_string())?;
+            let date = release["released"]
+                .as_str()
+                .ok_or_else(|| format!("VNDB returned an invalid release date for {id}."))?;
+            dates.insert(id.to_string(), date.to_string());
+        }
+    }
+    Ok(dates)
+}
+
 pub struct Vndb {
     http: reqwest::blocking::Client,
     last_call: Mutex<Instant>,
@@ -406,34 +437,7 @@ impl Vndb {
     }
 
     pub fn selected_release_dates(&self, ids: &[String]) -> Result<HashMap<String, String>, String> {
-        let mut dates = HashMap::new();
-        for chunk in ids.chunks(100) {
-            let mut filters = vec![json!("or")];
-            filters.extend(chunk.iter().map(|id| json!(["id", "=", id])));
-            let filters = if chunk.len() == 1 {
-                filters[1].clone()
-            } else {
-                Value::Array(filters)
-            };
-            let body = json!({"filters": filters, "fields": "released", "results": 100});
-            let data = self.post("/release", &body)?;
-            let results = data["results"]
-                .as_array()
-                .ok_or_else(|| "Couldn't read release dates from VNDB.".to_string())?;
-            for release in results {
-                let id = release["id"]
-                    .as_str()
-                    .ok_or_else(|| "VNDB returned a release without an ID.".to_string())?;
-                let date = release["released"]
-                    .as_str()
-                    .ok_or_else(|| format!("VNDB returned an invalid release date for {id}."))?;
-                dates.insert(id.to_string(), date.to_string());
-            }
-            if let Some(id) = chunk.iter().find(|id| !dates.contains_key(*id)) {
-                return Err(format!("Couldn't find release {id} on VNDB."));
-            }
-        }
-        Ok(dates)
+        collect_selected_release_dates(ids, |body| self.post("/release", body))
     }
 
     pub fn description(&self, id: &str) -> Result<String, String> {
@@ -855,6 +859,33 @@ mod tests {
         assert_eq!(original_language(json!({"results": [{"olang": ""}]})).unwrap(), None);
         assert_eq!(original_language(json!({"results": [{"olang": null}]})).unwrap(), None);
         assert!(original_language(json!({"results": [{"olang": 1}]})).is_err());
+    }
+
+    #[test]
+    fn selected_release_dates_skip_missing_ids_and_fetch_later_chunks() {
+        let ids: Vec<_> = (1..=101).map(|id| format!("r{id}")).collect();
+        let mut requests = 0;
+        let dates = collect_selected_release_dates(&ids, |_| {
+            requests += 1;
+            Ok(if requests == 1 {
+                json!({"results": [{"id": "r1", "released": "2022-10-28"}]})
+            } else {
+                json!({"results": [{"id": "r101", "released": "TBA"}]})
+            })
+        }).unwrap();
+        assert_eq!(requests, 2);
+        assert_eq!(dates.get("r1").map(String::as_str), Some("2022-10-28"));
+        assert_eq!(dates.get("r101").map(String::as_str), Some("TBA"));
+        assert!(!dates.contains_key("r2"));
+    }
+
+    #[test]
+    fn selected_release_dates_report_invalid_responses_and_request_errors() {
+        let ids = vec!["r1".to_string()];
+        assert!(collect_selected_release_dates(&ids, |_| Err("network error".into())).is_err());
+        assert!(collect_selected_release_dates(&ids, |_| Ok(json!({}))).is_err());
+        assert!(collect_selected_release_dates(&ids, |_| Ok(json!({"results": [{"released": "TBA"}]}))).is_err());
+        assert!(collect_selected_release_dates(&ids, |_| Ok(json!({"results": [{"id": "r1", "released": null}]}))).is_err());
     }
 
     #[test]
